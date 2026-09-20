@@ -106,11 +106,22 @@ if ($bodyFile) { Remove-Item -Force $bodyFile -ErrorAction SilentlyContinue }
 if (-not $release) { Write-Host 'FAIL: release was not created'; exit 1 }
 Write-Host ("OK release id=" + $release.id)
 
-$existing = @()
+$existingAssets = @()
 $list = Invoke-GitHub -Method Get -Uri "$api/releases/$($release.id)/assets" -Headers $headers
-if ($list) { $existing = $list | Select-Object -ExpandProperty name }
+if ($list) { $existingAssets = $list }
+
+# 清掉不属于本版本的残留资产（例如上一版忘了清空的 staging 目录传上来的文件）
+foreach ($asset in $existingAssets) {
+  if ($asset.name -notlike "*$Version*") {
+    Write-Host ("PRUNE stale asset " + $asset.name)
+    $null = Invoke-GitHub -Method Delete -Uri "$api/releases/assets/$($asset.id)" -Headers $headers
+  }
+}
+$existing = @($existingAssets | Where-Object { $_.name -like "*$Version*" } | Select-Object -ExpandProperty name)
 
 # 自动收集打包产物：NSIS 安装包 / MSI / 免安装 exe，统一改名后上传
+# 先清空 staging 目录，否则上一次发布残留的文件会被一起传上去
+if (Test-Path $AssetDir) { Remove-Item -Recurse -Force $AssetDir }
 New-Item -ItemType Directory -Force -Path $AssetDir | Out-Null
 $setup = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($setup) { Copy-Item $setup.FullName (Join-Path $AssetDir "MemoBook_${Version}_x64-setup.exe") -Force }
