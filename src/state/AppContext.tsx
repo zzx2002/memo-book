@@ -15,12 +15,27 @@ import { sendReminder } from '../lib/notify';
 import { reminderBody, splitDueReminders } from '../lib/reminder';
 import { buildNextOccurrence } from '../lib/repeat';
 import { getRepo } from '../lib/repo';
+import {
+  backupNow,
+  backupStamp,
+  exportFile,
+  importFile,
+  onQuickAdd,
+  showMainWindow,
+  type ExportFormat
+} from '../lib/desktop';
+import { buildExportPayload, parseImport, planImport, toJson, toMarkdown } from '../lib/transfer';
 import type { Folder, FolderColor, Priority, SortKey, Task, TaskPatch, View } from '../types';
 
 const PRIORITY_WEIGHT: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
 /** 提醒轮询间隔与跨天刷新间隔 */
 const HEARTBEAT_MS = 30 * 1000;
+/** 回收站保留天数，超过自动清理 */
+const TRASH_RETENTION_DAYS = 30;
+/** 自动备份：距上次备份超过这个小时数就在启动时备一份 */
+const AUTO_BACKUP_HOURS = 20;
+const LAST_BACKUP_KEY = 'memo-book-last-backup';
 
 export interface Counts {
   inbox: number;
@@ -70,6 +85,12 @@ interface AppApi {
   focusSearch: () => void;
   /** 拖拽排序：按新顺序回写 */
   reorder: (orderedIds: number[]) => void;
+  /** 导出为 JSON / Markdown，返回保存位置；用户取消返回 null */
+  exportData: (format: ExportFormat) => Promise<string | null>;
+  /** 从 JSON 备份导入（只新增不覆盖） */
+  importData: () => Promise<void>;
+  /** 立刻写一份备份 */
+  runBackup: (silent?: boolean) => Promise<void>;
   addInputRef: RefObject<HTMLInputElement>;
   focusAddInput: () => void;
   setView: (view: View) => void;
@@ -122,6 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** 给轮询定时器与键盘导航读取的最新状态 */
   const tasksRef = useRef<Task[]>([]);
   const foldersRef = useRef<Folder[]>([]);
+  const trashRef = useRef<Task[]>([]);
   const navRef = useRef<{ ids: number[]; index: number }>({ ids: [], index: -1 });
   const beatRef = useRef<() => void>(() => {});
 
@@ -130,6 +152,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let alive = true;
     (async () => {
       try {
+        // 回收站自动清理：超过 30 天的软删除记录直接抹掉，避免库无限膨胀
+        await repo.purgeExpiredTrash(TRASH_RETENTION_DAYS).catch(() => 0);
         const [fs, ts, tr] = await Promise.all([
           repo.listFolders(),
           repo.listTasks(),
@@ -167,6 +191,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     foldersRef.current = folders;
   }, [folders]);
+  useEffect(() => {
+    trashRef.current = trash;
+  }, [trash]);
 
   /* ---------- 心跳：到点提醒 + 跨天刷新 ---------- */
   useEffect(() => {
@@ -188,7 +215,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const folder = foldersRef.current.find((f) => f.id === task.folderId);
         void sendReminder(`提醒：${task.title}`, reminderBody(task, folder ? folder.name : '未分类'));
       }
-      if (fire.length) notify(`已提醒 ${fire.length} 条待办`);
+      if (fire.length) {
+        // 窗口被最小化/收进托盘时主动唤出来；用户正在别处工作时只弹通知，不抢焦点
+        if (typeof document !== 'undefined' && document.hidden) void showMainWindow();
+        notify(`已提醒 ${fire.length} 条待办`);
+      }
     };
 
     beatRef.current = beat;
@@ -200,6 +231,109 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (ready) beatRef.current();
   }, [ready]);
+
+  /* ---------- 托盘 / 全局快捷键：快速新增 ---------- */
+  useEffect(() => {
+    let dispose: (() => void) | null = null;
+    void onQuickAdd(() => {
+      focusAddInput();
+      notify('快速新增：输入后回车即可');
+    }).then((fn) => {
+      dispose = fn;
+    });
+    return () => dispose?.();
+  }, [focusAddInput, notify]);
+
+  /* ---------- 导出 / 导入 / 备份 ---------- */
+  const exportData = useCallback(
+    async (format: ExportFormat) => {
+      const stamp = backupStamp();
+      try {
+        const contents =
+          format === 'json'
+            ? toJson(buildExportPayload(foldersRef.current, tasksRef.current, trashRef.current))
+            : toMarkdown(foldersRef.current, tasksRef.current);
+        const fileName = `memo-book-${stamp}.${format === 'json' ? 'json' : 'md'}`;
+        const where = await exportFile(fileName, contents, format);
+        if (where) notify(`已导出：${where}`);
+        return where;
+      } catch (e) {
+        notify('导出失败：' + (e instanceof Error ? e.message : String(e)));
+        return null;
+      }
+    },
+    [notify]
+  );
+
+  const importData = useCallback(async () => {
+    let text: string | null = null;
+    try {
+      text = await importFile();
+    } catch (e) {
+      notify('读取文件失败：' + (e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    if (!text) return;
+
+    try {
+      const plan = planImport(parseImport(text), foldersRef.current, tasksRef.current);
+      const nameToId = new Map(foldersRef.current.map((f) => [f.name.trim().toLowerCase(), f.id]));
+
+      for (const folder of plan.newFolders) {
+        const created = await repo.createFolder(folder.name, folder.color);
+        setFolders((prev) => [...prev, created]);
+        nameToId.set(created.name.trim().toLowerCase(), created.id);
+      }
+
+      let added = 0;
+      for (const item of plan.newTasks) {
+        const folderId = item.folderName ? nameToId.get(item.folderName.toLowerCase()) ?? null : null;
+        const created = await repo.createTask({ ...item.task, folderId });
+        setTasks((prev) => [...prev, created]);
+        added += 1;
+      }
+
+      notify(
+        added
+          ? `已导入 ${added} 条待办${plan.skipped ? `，跳过 ${plan.skipped} 条重复` : ''}`
+          : `没有可导入的新待办${plan.skipped ? `（跳过 ${plan.skipped} 条重复）` : ''}`
+      );
+    } catch (e) {
+      notify('导入失败：' + (e instanceof Error ? e.message : String(e)));
+    }
+  }, [notify, repo]);
+
+  const runBackup = useCallback(
+    async (silent = false) => {
+      const contents = toJson(buildExportPayload(foldersRef.current, tasksRef.current, trashRef.current));
+      const where = await backupNow(contents, backupStamp());
+      if (where) {
+        try {
+          localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+        } catch {
+          /* 忽略存储失败 */
+        }
+        if (!silent) notify(`已备份：${where}`);
+      } else if (!silent) {
+        notify('备份失败，请检查应用数据目录权限');
+      }
+    },
+    [notify]
+  );
+
+  // 启动时按间隔自动备份一次（默认约每天一次）
+  useEffect(() => {
+    if (!ready) return;
+    let last = 0;
+    try {
+      last = Number(localStorage.getItem(LAST_BACKUP_KEY) ?? 0);
+    } catch {
+      last = 0;
+    }
+    if (Date.now() - last < AUTO_BACKUP_HOURS * 3600 * 1000) return;
+    void runBackup(true);
+  }, [ready, runBackup]);
+
   const folderById = useCallback(
     (id: number | null) => (id == null ? null : folders.find((f) => f.id === id) ?? null),
     [folders]
@@ -624,6 +758,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     searchInputRef,
     focusSearch,
     reorder,
+    exportData,
+    importData,
+    runBackup,
     addInputRef,
     focusAddInput,
     setView,

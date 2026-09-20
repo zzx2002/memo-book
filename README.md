@@ -37,17 +37,21 @@
 │  └─ lib
 │     ├─ dates.ts                # 日期格式化与加减（4月25日 (周五)）
 │     ├─ repeat.ts               # 重复规则：下一次日期推算、生成下一实例
-│     ├─ reminder.ts             # 提醒调度纯函数（到点/过期分流）
+│     ├─ reminder.ts             # 提醒调度纯函数（到点/过期分流、提前量）
 │     ├─ notify.ts               # 通知发送：Tauri 原生 / Web Notification 降级
+│     ├─ desktop.ts              # 桌面能力封装：导出/导入/备份/唤起窗口/快捷键事件
+│     ├─ transfer.ts             # 导入导出纯函数（JSON 快照、Markdown、合并判重）
 │     ├─ reorder.ts              # 手动排序纯函数（moveTo / toSortOrder）
 │     ├─ constants.ts            # 优先级 / 文件夹配色 / 视图 / 排序常量
 │     ├─ seed.ts                 # 示例数据（与设计稿一致）
 │     └─ repo/{index,sqlite,local}.ts
 ├─ src-tauri
-│  ├─ src/lib.rs                 # 注册 sql / notification 插件与迁移（v1 / v2 / v3）
+│  ├─ src/lib.rs                 # 托盘 / 单实例 / 全局快捷键 / 窗口状态 / 迁移注册（v1~v4）
+│  ├─ src/files.rs               # 导出 / 导入 / 备份的原生命令（文件读写都在 Rust 侧）
 │  ├─ migrations/0001_init.sql   # 建表 + 示例数据
 │  ├─ migrations/0002_sort_and_repeat.sql   # sort_order + repeat_rule
 │  ├─ migrations/0003_reminder_and_trash.sql # notified_at + deleted_at
+│  ├─ migrations/0004_remind_before.sql     # remind_before（提前量）
 │  ├─ capabilities/default.json  # 权限：core + sql + sql:allow-execute + notification
 │  ├─ icons/                     # 由 scripts/gen-icons.mjs 生成
 │  └─ tauri.conf.json
@@ -99,8 +103,8 @@ pnpm desktop:build      # 打包桌面安装包
 | --- | --- |
 | `pnpm typecheck` | TypeScript 全量类型检查 |
 | `pnpm check:config` | 校验 tauri.conf.json / 权限 / 图标是否齐备 |
-| `pnpm check:sql` | 用 Node 内置 `node:sqlite` 在内存库里跑一遍全部迁移，打印各视图条数并演练排序回写、软删除/恢复、提醒标记 |
-| `pnpm check:ui` | jsdom 中真实挂载 App，覆盖搜索、拖拽排序、重复任务、日期选择、回收站与撤销、内联重命名、键盘导航、提醒调度（45 项断言） |
+| `pnpm check:sql` | 用 Node 内置 `node:sqlite` 在内存库里跑一遍全部迁移，打印各视图条数并演练排序回写、软删除/恢复、提醒标记、回收站超期清理 |
+| `pnpm check:ui` | jsdom 中真实挂载 App，覆盖搜索、拖拽排序、重复任务、日期选择、回收站与撤销、内联重命名、键盘导航、提醒调度、提前量、导入导出（57 项断言） |
 
 ### 权限与窗口配置说明
 
@@ -114,13 +118,16 @@ pnpm desktop:build      # 打包桌面安装包
 ## 数据存储
 
 - 数据库文件：Windows 为 `%APPDATA%\com.memobook.desktop\memo.db`（macOS/Linux 在对应的应用数据目录）
+- 自动备份：`%APPDATA%\com.memobook.desktop\backups\memo-<时间戳>.json`，保留最近 7 份，启动时每天自动备一次
 - 表：`folders`、`tasks`、`app_meta`
 - 迁移：`src-tauri/migrations/*.sql`，由 `tauri-plugin-sql` 在启动时按版本执行，只执行一次
   - `0001_init.sql` 建表 + 示例数据
   - `0002_sort_and_repeat.sql` 手动排序 + 重复规则
   - `0003_reminder_and_trash.sql` 提醒记录 + 软删除
+  - `0004_remind_before.sql` 提醒提前量
 - 首次启动会写入 3 个文件夹与 13 条示例待办；"⋯" 菜单里可随时再次载入示例数据
-- 删除是**软删除**：`deleted_at` 非空即进回收站，可恢复；「清空回收站」才会真正 `DELETE`
+- 删除是**软删除**：`deleted_at` 非空即进回收站，可恢复；超过 30 天启动时自动清理，「清空回收站」则立即 `DELETE`
+- 导出的 JSON 是完整快照（含文件夹与回收站），导入为**只新增不覆盖**：文件夹按名称复用，待办以「标题 + 截止日期」判重
 
 ## 已实现
 
@@ -153,10 +160,25 @@ pnpm desktop:build      # 打包桌面安装包
 - **跨天自动刷新**：心跳定时器让「今天 / 即将到来」与逾期高亮在跨零点后自动纠正，不再停留在昨天
 - 快捷键新增：`5` 直达回收站
 
+### v0.4 桌面化 / 数据安全 / 提醒提前量
+
+- **托盘常驻**：点窗口关闭按钮不再退出，而是收进系统托盘（提醒继续生效，并弹一条通知说明）；
+  左键点托盘图标唤出窗口，右键菜单提供 显示主窗口 / 快速新增待办 / 退出
+- **单实例**：重复启动只会聚焦已有窗口，避免两条 SQLite 连接、提醒弹两次
+- **全局快捷键**：`Ctrl/Cmd+Shift+Space` 在任何界面下唤出窗口并聚焦新增输入框
+- **窗口状态记忆**：位置与大小由 `tauri-plugin-window-state` 自动保存恢复
+- **数据导入导出**：`⋯` 菜单里可 导出为 JSON（完整快照）/ 导出为 Markdown（便于阅读粘贴）/ 从 JSON 导入；
+  文件读写全部在 Rust 侧完成，前端不开放 fs 权限
+- **自动备份**：启动时若距上次备份超过约 20 小时，自动写一份 JSON 到应用数据目录，保留最近 7 份（可手动「立即备份」）
+- **回收站自动清理**：超过 30 天的软删除记录在启动时清除
+- **提醒提前量**：详情面板新增「提前提醒」下拉（准时 / 5 / 15 / 30 分钟 / 1 小时 / 1 天），实际触发时刻 = 提醒时间 − 提前量
+- **提醒唤起窗口**：到点提醒时若窗口处于最小化/托盘状态会自动唤出；用户正在别处工作时只弹通知、不抢焦点
+
 ### 快捷键
 
 | 按键 | 作用 |
 | --- | --- |
+| `Ctrl/Cmd+Shift+Space` | 全局快捷键：唤出窗口并聚焦新增输入框（应用未前台时也生效） |
 | `N` | 聚焦"新增待办"输入框 |
 | `/` 或 `Ctrl/Cmd+K` | 聚焦搜索框 |
 | `1` ~ `5` | 切换 收件箱 / 今天 / 即将到来 / 已完成 / 回收站 |
@@ -167,9 +189,9 @@ pnpm desktop:build      # 打包桌面安装包
 
 ## 后续规划
 
-- 数据导入导出（JSON / Markdown）与自动备份
-- 桌面化：托盘常驻、全局快捷键快速新增、窗口大小与位置记忆、开机自启、自动更新
+- 开机自启开关、自动更新（updater 插件）与安装包签名
 - 子任务与清单模板；每 N 天 / 工作日重复
 - 多选批量操作（批量改优先级、文件夹、删除）
+- 全局搜索（跨视图）与命中片段高亮
 - 深色主题（跟随系统）
 - 列表虚拟滚动（数据量上千后）

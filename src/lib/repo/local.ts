@@ -26,6 +26,7 @@ function normalizeTask(t: Partial<Task> & { id: number; title: string }): Task {
     startDate: t.startDate ?? null,
     dueDate: t.dueDate ?? null,
     remindAt: t.remindAt ?? null,
+    remindBefore: t.remindBefore ?? 0,
     repeat: t.repeat ?? 'none',
     sortOrder: t.sortOrder ?? 0,
     notifiedAt: t.notifiedAt ?? null,
@@ -58,6 +59,7 @@ function seedState(): LocalState {
       startDate: t.startOffset == null ? null : shiftISO(t.startOffset),
       dueDate: t.dueOffset == null ? null : shiftISO(t.dueOffset),
       remindAt: t.remindTime && t.dueOffset != null ? `${shiftISO(t.dueOffset)}T${t.remindTime}` : null,
+      remindBefore: 0,
       repeat: t.repeat ?? 'none',
       sortOrder: seq,
       notifiedAt: null,
@@ -156,6 +158,7 @@ export const localRepo: Repo = {
       startDate: input.startDate ?? null,
       dueDate: input.dueDate ?? null,
       remindAt: input.remindAt ?? null,
+      remindBefore: input.remindBefore ?? 0,
       repeat: input.repeat ?? 'none',
       sortOrder: s.tasks.reduce((max, t) => Math.max(max, t.sortOrder), -1) + 1,
       notifiedAt: input.notifiedAt ?? null,
@@ -196,6 +199,19 @@ export const localRepo: Repo = {
     const s = load();
     s.tasks = s.tasks.filter((t) => !t.deletedAt);
     persist();
+  },
+
+  async purgeExpiredTrash(days) {
+    const s = load();
+    const cutoff = Date.now() - Math.max(0, days) * 864e5;
+    const before = s.tasks.length;
+    s.tasks = s.tasks.filter((t) => {
+      if (!t.deletedAt) return true;
+      const at = new Date(t.deletedAt).getTime();
+      return Number.isNaN(at) || at >= cutoff;
+    });
+    persist();
+    return before - s.tasks.length;
   },
 
   async reorderTasks(orderedIds) {

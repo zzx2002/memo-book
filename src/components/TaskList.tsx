@@ -31,7 +31,10 @@ export function TaskList() {
     searchInputRef,
     reorder,
     tasks,
-    notify
+    notify,
+    exportData,
+    importData,
+    runBackup
   } = useApp();
 
   const [sortOpen, setSortOpen] = useState(false);
@@ -307,8 +310,41 @@ export function TaskList() {
           载入示例数据
         </MenuItem>
         <div className="mx-1.5 my-1 h-px bg-line" />
+        <MenuItem
+          onClick={() => {
+            setMoreOpen(false);
+            void exportData('json');
+          }}
+        >
+          导出为 JSON
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setMoreOpen(false);
+            void exportData('markdown');
+          }}
+        >
+          导出为 Markdown
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setMoreOpen(false);
+            void importData();
+          }}
+        >
+          从 JSON 导入
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setMoreOpen(false);
+            void runBackup();
+          }}
+        >
+          立即备份
+        </MenuItem>
+        <div className="mx-1.5 my-1 h-px bg-line" />
         <div className="px-2.5 py-1 text-[11.5px] leading-relaxed text-ink-faint">
-          删除是软删除，可在回收站里恢复 · 快捷键 1-5 切换视图
+          删除是软删除，可在回收站里恢复（超 30 天自动清理）· 快捷键 1-5 切换视图
         </div>
       </Dropdown>
     </section>

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { DESC_MAX, folderHex, NO_FOLDER_COLOR, PRIORITY, PRIORITY_ORDER } from '../lib/constants';
 import { fmtDateTime, fmtFull, fmtMDW, fmtStamp, toDateInput, toDateTimeInput } from '../lib/dates';
 import { REPEAT_LABELS, REPEAT_ORDER } from '../lib/repeat';
+import { REMIND_BEFORE_OPTIONS, remindBeforeLabel } from '../lib/reminder';
 import { useApp } from '../state/AppContext';
 import type { Task } from '../types';
 import { Icon, type IconName } from './Icon';
@@ -100,7 +101,7 @@ function DetailBody({ task }: { task: Task }) {
                 <Icon name="clock" size={14} />
               </span>
               <span className="chip-col">
-                <span className="k">提醒</span>
+                <span className="k">{task.remindBefore > 0 ? remindBeforeLabel(task.remindBefore) : '提醒'}</span>
                 <span className="v">{fmtDateTime(task.remindAt)}</span>
               </span>
             </span>
@@ -226,6 +227,37 @@ function DetailBody({ task }: { task: Task }) {
           placeholder={!task.remindAt}
           onChange={(value) => updateTask(task.id, { remindAt: value })}
         />
+
+        <div className="field-row">
+          <span className="k">提前提醒</span>
+          <div className="flex min-h-[38px] items-center gap-2">
+            <div className="pick">
+              <div className={`box${task.remindAt ? '' : ' opacity-60'}`}>
+                <span className="grid place-items-center text-ink-soft">
+                  <Icon name="clock" size={14} />
+                </span>
+                <span className="flex-1 truncate">
+                  {task.remindAt ? remindBeforeLabel(task.remindBefore) : '先设置提醒时间'}
+                </span>
+                <span className="grid place-items-center text-ink-mute">
+                  <Icon name="chev" size={13} />
+                </span>
+              </div>
+              <select
+                value={task.remindBefore}
+                disabled={!task.remindAt}
+                aria-label="提前提醒"
+                onChange={(e) => updateTask(task.id, { remindBefore: Number(e.target.value) })}
+              >
+                {REMIND_BEFORE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
 
         <div className="field-row">
           <span className="k">重复</span>

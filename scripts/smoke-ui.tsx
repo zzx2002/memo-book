@@ -346,6 +346,7 @@ const fakeTask = (
   startDate: null,
   dueDate: null,
   remindAt,
+  remindBefore: 0,
   repeat: 'none',
   sortOrder: id,
   notifiedAt: null,
@@ -379,7 +380,89 @@ expect(
   `stale=${JSON.stringify(split.stale.map((t) => t.id))}`
 );
 
-/* ---------- 11. 持久化 ---------- */
+/* ---------- 11. 提前量提醒（v0.4） ---------- */
+const { fireTimeOf, remindBeforeLabel } = await import('../src/lib/reminder');
+const lead = fireTimeOf({ remindAt: '2026-09-20T09:00', remindBefore: 15 });
+expect(
+  lead !== null && lead.getHours() === 8 && lead.getMinutes() === 45,
+  '提前 15 分钟时，实际触发时刻为 08:45',
+  `实际：${lead?.toLocaleString('zh-CN')}`
+);
+expect(remindBeforeLabel(15) === '提前 15 分钟', '提前量文案正确', remindBeforeLabel(15));
+
+const withLead = splitDueReminders(
+  [fakeTask(8, '2026-09-20T10:10', { remindBefore: 15 })], // 10:10 提前 15 分 -> 09:55 已到点
+  now
+);
+expect(
+  withLead.fire.length === 1,
+  '提前量计入后，提醒会在 09:55 触发（当前 10:00）',
+  `fire=${withLead.fire.length}`
+);
+const notYet = splitDueReminders(
+  [fakeTask(9, '2026-09-20T10:10', { remindBefore: 0 })],
+  now
+);
+expect(notYet.fire.length === 0, '未设提前量时 10:10 的提醒还不到点', `fire=${notYet.fire.length}`);
+
+/* ---------- 12. 导出 / 导入（v0.4，纯函数） ---------- */
+const transfer = await import('../src/lib/transfer');
+const exportFolders = [{ id: 1, name: '工作', color: 'orange', sortOrder: 0 }];
+const exportTasks = [
+  fakeTask(21, null, {
+    title: '写周报',
+    note: '第一行\n第二行',
+    priority: 'high',
+    folderId: 1,
+    dueDate: '2026-09-25'
+  })
+];
+const payload = transfer.buildExportPayload(exportFolders, exportTasks, [], now);
+const json = transfer.toJson(payload);
+expect(
+  JSON.parse(json).app === 'memo-book' && JSON.parse(json).tasks.length === 1,
+  'JSON 导出结构正确',
+  json.slice(0, 60)
+);
+
+const markdown = transfer.toMarkdown(exportFolders, exportTasks, now);
+expect(
+  markdown.includes('## 工作') && markdown.includes('- [ ] 写周报') && markdown.includes('截止 9月25日'),
+  'Markdown 导出包含分组与元信息',
+  markdown.slice(0, 120)
+);
+expect(markdown.includes('> 第一行'), 'Markdown 导出保留任务说明', markdown);
+
+expect(
+  (() => {
+    try {
+      transfer.parseImport('{"foo":1}');
+      return false;
+    } catch {
+      return true;
+    }
+  })(),
+  '非法备份文件会被拒绝',
+  '非法文件竟然解析成功'
+);
+
+const roundTrip = transfer.parseImport(json);
+const plan = transfer.planImport(roundTrip, exportFolders, []);
+expect(
+  plan.newFolders.length === 0 && plan.newTasks.length === 1 && plan.skipped === 0,
+  '导入时复用同名文件夹，新增 1 条待办',
+  JSON.stringify({ f: plan.newFolders.length, t: plan.newTasks.length, s: plan.skipped })
+);
+const dedup = transfer.planImport(roundTrip, exportFolders, exportTasks);
+expect(dedup.newTasks.length === 0 && dedup.skipped === 1, '重复待办（同标题+同截止）会被跳过', JSON.stringify(dedup.skipped));
+const withTrash = transfer.planImport(
+  transfer.parseImport(transfer.toJson(transfer.buildExportPayload(exportFolders, [], [fakeTask(22, null, { title: '已删除的', deletedAt: '2026-09-19T10:00' })], now))),
+  exportFolders,
+  []
+);
+expect(withTrash.newTasks.length === 0 && withTrash.skipped === 1, '回收站内容不参与导入', JSON.stringify(withTrash));
+
+/* ---------- 13. 持久化 ---------- */
 const stored = JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
 expect(
   !!stored.tasks?.some((t: { title: string }) => t.title === '冒烟测试：写一条新待办'),

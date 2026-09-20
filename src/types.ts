@@ -28,6 +28,8 @@ export interface Task {
   dueDate: string | null;
   /** 提醒时间 YYYY-MM-DDTHH:mm */
   remindAt: string | null;
+  /** 在提醒时间基础上提前多少分钟（0 = 准时） */
+  remindBefore: number;
   /** 重复规则 */
   repeat: RepeatRule;
   /** 手动排序位次（越小越靠前） */
@@ -58,6 +60,7 @@ export interface TaskPatch {
   startDate?: string | null;
   dueDate?: string | null;
   remindAt?: string | null;
+  remindBefore?: number;
   repeat?: RepeatRule;
   sortOrder?: number;
   notifiedAt?: string | null;
@@ -84,6 +87,8 @@ export interface Repo {
   purgeTask(id: number): Promise<void>;
   /** 清空回收站 */
   clearTrash(): Promise<void>;
+  /** 自动清理回收站里超过 days 天的记录，返回清掉条数 */
+  purgeExpiredTrash(days: number): Promise<number>;
   /** 按给定顺序回写 sort_order，用于拖拽排序 */
   reorderTasks(orderedIds: number[]): Promise<void>;
   clearCompleted(): Promise<void>;

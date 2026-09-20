@@ -37,7 +37,7 @@ const columns = db
   .prepare('SELECT name FROM pragma_table_info(\'tasks\')')
   .all()
   .map((r) => r.name);
-const required = ['notified_at', 'deleted_at', 'sort_order', 'repeat_rule'];
+const required = ['notified_at', 'deleted_at', 'sort_order', 'repeat_rule', 'remind_before'];
 const missing = required.filter((c) => !columns.includes(c));
 if (missing.length) {
   console.error('✘ tasks 表缺少列:', missing.join(', '));
@@ -112,6 +112,18 @@ if (!notifiedAt) {
   process.exit(1);
 }
 console.log('提醒标记演练: OK');
+
+// 演练回收站超期自动清理（v0.4：保留 30 天）
+const purgeTarget = one('SELECT id FROM tasks ORDER BY id LIMIT 1');
+db.prepare("UPDATE tasks SET deleted_at = datetime('now', '-40 day') WHERE id = ?").run(purgeTarget);
+const purged = db
+  .prepare("DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-30 day')")
+  .run().changes;
+if (purged !== 1) {
+  console.error('✘ 超期回收站清理失败，删除条数 =', purged);
+  process.exit(1);
+}
+console.log('回收站超期自动清理演练: OK（保留 30 天）');
 
 console.log('外键级联后未分类任务数:', one('SELECT COUNT(*) FROM tasks WHERE folder_id IS NULL'));
 

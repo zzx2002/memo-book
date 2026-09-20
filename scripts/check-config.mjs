@@ -37,15 +37,46 @@ else no('缺少 notification:default，sendNotification 会被拒绝');
 
 // Rust 侧依赖与插件注册要和前端调用对得上
 const cargo = readFileSync('src-tauri/Cargo.toml', 'utf8');
-if (cargo.includes('tauri-plugin-notification')) ok('Cargo.toml 已引入 tauri-plugin-notification');
-else no('Cargo.toml 缺少 tauri-plugin-notification');
+const CARGO_DEPS = [
+  'tauri-plugin-notification',
+  'tauri-plugin-dialog',
+  'tauri-plugin-global-shortcut',
+  'tauri-plugin-window-state',
+  'tauri-plugin-single-instance'
+];
+for (const dep of CARGO_DEPS) {
+  if (cargo.includes(dep)) ok(`Cargo.toml 已引入 ${dep}`);
+  else no(`Cargo.toml 缺少 ${dep}`);
+}
+if (cargo.includes('features = ["tray-icon"]')) ok('Cargo.toml 已开启 tauri 的 tray-icon feature');
+else no('Cargo.toml 未开启 tray-icon feature，托盘无法创建');
+
 const libRs = readFileSync('src-tauri/src/lib.rs', 'utf8');
-if (libRs.includes('tauri_plugin_notification::init()')) ok('lib.rs 已注册通知插件');
-else no('lib.rs 未注册通知插件');
-for (const n of ['1', '2', '3']) {
+const RUST_MARKERS = [
+  ['tauri_plugin_notification::init()', '通知插件'],
+  ['tauri_plugin_dialog::init()', '文件对话框插件'],
+  ['tauri_plugin_single_instance', '单实例插件'],
+  ['tauri_plugin_window_state', '窗口状态插件'],
+  ['tauri_plugin_global_shortcut', '全局快捷键插件'],
+  ['build_tray', '托盘构建'],
+  ['CmdOrCtrl+Shift+Space', '快速新增快捷键'],
+  ['WindowEvent::CloseRequested', '关闭到托盘']
+];
+for (const [needle, label] of RUST_MARKERS) {
+  if (libRs.includes(needle)) ok(`lib.rs 已实现：${label}`);
+  else no(`lib.rs 缺少：${label}`);
+}
+for (const n of ['1', '2', '3', '4']) {
   if (libRs.includes(`version: ${n},`)) ok(`lib.rs 已注册迁移 v${n}`);
   else no(`lib.rs 缺少迁移 v${n}`);
 }
+const filesRs = readFileSync('src-tauri/src/files.rs', 'utf8');
+for (const cmd of ['export_text_file', 'import_text_file', 'backup_now', 'list_backups', 'show_main_window']) {
+  if (libRs.includes(`files::${cmd}`) && filesRs.includes(`pub async fn ${cmd}`)) ok(`Rust 命令已注册：${cmd}`);
+  else if (libRs.includes(`files::${cmd}`) && filesRs.includes(`pub fn ${cmd}`)) ok(`Rust 命令已注册：${cmd}`);
+  else no(`Rust 命令未注册或未实现：${cmd}`);
+}
+
 const JS_PLUGINS = ['@tauri-apps/plugin-sql', '@tauri-apps/plugin-notification'];
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 for (const dep of JS_PLUGINS) {
