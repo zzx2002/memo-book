@@ -119,23 +119,36 @@ foreach ($asset in $existingAssets) {
 }
 $existing = @($existingAssets | Where-Object { $_.name -like "*$Version*" } | Select-Object -ExpandProperty name)
 
+
 # 自动收集打包产物：NSIS 安装包 / MSI / 免安装 exe，统一改名后上传
 # 先清空 staging 目录，否则上一次发布残留的文件会被一起传上去
 if (Test-Path $AssetDir) { Remove-Item -Recurse -Force $AssetDir }
 New-Item -ItemType Directory -Force -Path $AssetDir | Out-Null
-$setup = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($setup) { Copy-Item $setup.FullName (Join-Path $AssetDir "MemoBook_${Version}_x64-setup.exe") -Force }
-$msi = Get-ChildItem 'src-tauri/target/release/bundle/msi' -Filter '*.msi' -ErrorAction SilentlyContinue | Select-Object -First 1
+# 必须按版本号过滤：bundle 目录里会留着历史版本的安装包，
+# 用 -First 1 会抓到最旧的那个（曾把 0.4.0 的安装器当成 0.5.0 发出去）
+$setup = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter "*$Version*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $setup) { Write-Host "FAIL: no nsis installer for $Version found"; exit 1 }
+Copy-Item $setup.FullName (Join-Path $AssetDir "MemoBook_${Version}_x64-setup.exe") -Force
+$msi = Get-ChildItem 'src-tauri/target/release/bundle/msi' -Filter "*$Version*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($msi) { Copy-Item $msi.FullName (Join-Path $AssetDir "MemoBook_${Version}_x64.msi") -Force }
 $portable = 'src-tauri/target/release/memo-book.exe'
 if (Test-Path $portable) { Copy-Item $portable (Join-Path $AssetDir "MemoBook_${Version}_x64-portable.exe") -Force }
 
 foreach ($file in Get-ChildItem $AssetDir -File) {
-  if ($existing -contains $file.Name) { Write-Host ("SKIP existing asset " + $file.Name); continue }
+  $remote = $existingAssets | Where-Object { $_.name -eq $file.Name } | Select-Object -First 1
+  if ($remote) {
+    if ([int64]$remote.size -eq [int64]$file.Length) {
+      Write-Host ("SKIP unchanged asset " + $file.Name)
+      continue
+    }
+    # 同名但字节数不同 = 内容已经变了（例如上次发出去的是错的文件），删掉重传
+    Write-Host ("REPLACE asset " + $file.Name + " (remote " + $remote.size + " != local " + $file.Length + ")")
+    $null = Invoke-GitHub -Method Delete -Uri "$api/releases/assets/$($remote.id)" -Headers $headers
+  }
   $uri = "https://uploads.github.com/repos/$Repo/releases/$($release.id)/assets?name=$($file.Name)"
   $asset = Invoke-GitHub -Method Post -Uri $uri -Headers $headers -InFile $file.FullName -ContentType 'application/octet-stream'
   if ($asset) {
-    Write-Host ("OK uploaded " + $asset.name + " (" + [math]::Round($asset.size / 1MB, 2) + " MB)")
+    Write-Host ("OK uploaded " + $asset.name + " (" + $asset.size + " bytes)")
   } else {
     Write-Host ("FAIL uploading " + $file.Name)
   }
