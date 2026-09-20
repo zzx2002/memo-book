@@ -17,7 +17,9 @@ export type IconName =
   | 'check'
   | 'search'
   | 'repeat'
-  | 'grip';
+  | 'grip'
+  | 'settings'
+  | 'select';
 
 interface IconDef {
   node: ReactNode;
@@ -127,6 +129,24 @@ const DEFS: Record<IconName, IconDef> = {
       </>
     ),
     fill: true
+  },
+  settings: {
+    node: (
+      <>
+        <circle cx="12" cy="12" r="2.9" />
+        <path d="M12 3.2l1.1 1.9 2.1-.6.5 2.1 2.1.5-.6 2.1 1.9 1.1-1.9 1.1.6 2.1-2.1.5-.5 2.1-2.1-.6L12 20.8l-1.1-1.9-2.1.6-.5-2.1-2.1-.5.6-2.1L4.9 13l1.9-1.1-.6-2.1 2.1-.5.5-2.1 2.1.6z" />
+      </>
+    ),
+    sw: 1.5
+  },
+  select: {
+    node: (
+      <>
+        <rect x="3.5" y="4.5" width="17" height="15" rx="3" />
+        <path d="M8.2 12.3l2.4 2.3 4.6-4.8" />
+      </>
+    ),
+    sw: 1.7
   }
 };
 

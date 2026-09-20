@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { folderHex, NO_FOLDER_COLOR, SORTS, SORT_ORDER } from '../lib/constants';
+import { folderHex, NO_FOLDER_COLOR, PRIORITY, PRIORITY_ORDER, SORTS, SORT_ORDER } from '../lib/constants';
 import { fmtStamp } from '../lib/dates';
 import { moveTo } from '../lib/reorder';
 import { useApp } from '../state/AppContext';
@@ -34,7 +34,18 @@ export function TaskList() {
     notify,
     exportData,
     importData,
-    runBackup
+    runBackup,
+    folders,
+    selectMode,
+    setSelectMode,
+    selectedIds,
+    selectAllVisible,
+    clearSelection,
+    bulkComplete,
+    bulkDelete,
+    bulkSetPriority,
+    bulkSetFolder,
+    openSettings
   } = useApp();
 
   const [sortOpen, setSortOpen] = useState(false);
@@ -42,9 +53,13 @@ export function TaskList() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
+  const [bulkPriorityOpen, setBulkPriorityOpen] = useState(false);
+  const [bulkFolderOpen, setBulkFolderOpen] = useState(false);
 
   const sortRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
+  const bulkPriorityRef = useRef<HTMLButtonElement>(null);
+  const bulkFolderRef = useRef<HTMLButtonElement>(null);
   // 拖拽源放在 ref 里：dragstart 与 drop 可能落在同一批渲染中，用 state 会读到旧值
   const dragIdRef = useRef<number | null>(null);
 
@@ -168,6 +183,15 @@ export function TaskList() {
           </button>
 
           <button
+            type="button"
+            className={`icon-btn${selectMode ? ' !bg-accent-bg !text-accent-ink' : ''}`}
+            title="多选（批量完成 / 移动 / 删除）"
+            onClick={() => setSelectMode(!selectMode)}
+          >
+            <Icon name="select" size={15} />
+          </button>
+
+          <button
             ref={moreRef}
             type="button"
             className="icon-btn"
@@ -192,11 +216,13 @@ export function TaskList() {
       )}
 
       <div className="px-[26px] pb-2 pt-2 text-[11.5px] text-ink-faint">
-        {isTrashView
-          ? '回收站不参与搜索以外的筛选 · 快捷键 5 直达'
-          : manual
-            ? '拖拽左侧手柄调整顺序 · 双击标题可重命名'
-            : '拖拽左侧手柄即可调整顺序（会自动切换为手动排序） · 双击重命名，/ 搜索，N 新增'}
+        {selectMode
+          ? `多选模式：点选待办，Ctrl+A 全选，Esc 退出 · 已选 ${selectedIds.length} 条`
+          : isTrashView
+            ? '回收站不参与搜索以外的筛选 · 快捷键 5 直达'
+            : manual
+              ? '拖拽左侧手柄调整顺序 · 双击标题可重命名'
+              : '拖拽左侧手柄即可调整顺序（会自动切换为手动排序） · 双击重命名，/ 搜索，N 新增'}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-6">
@@ -214,7 +240,13 @@ export function TaskList() {
         ) : isDoneView ? (
           doneTasks.length ? (
             doneTasks.map((task) => (
-              <TaskRow key={task.id} task={task} selected={selectedId === task.id} />
+              <TaskRow
+                key={task.id}
+                task={task}
+                selected={selectedId === task.id}
+                selectable={selectMode}
+                checked={selectedIds.includes(task.id)}
+              />
             ))
           ) : (
             <div className="empty-state">
@@ -232,6 +264,8 @@ export function TaskList() {
                   selected={selectedId === task.id}
                   draggable
                   gripAlways={manual}
+                  selectable={selectMode}
+                  checked={selectedIds.includes(task.id)}
                   dragging={dragId === task.id}
                   dropTarget={overId === task.id && dragId !== task.id}
                   onDragStart={() => startDrag(task.id)}
@@ -261,13 +295,126 @@ export function TaskList() {
                 </div>
                 {showDone &&
                   doneTasks.map((task) => (
-                    <TaskRow key={task.id} task={task} selected={selectedId === task.id} />
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      selected={selectedId === task.id}
+                      selectable={selectMode}
+                      checked={selectedIds.includes(task.id)}
+                    />
                   ))}
               </>
             )}
           </>
         )}
       </div>
+
+      {selectMode ? (
+        <div className="flex flex-none flex-wrap items-center gap-2 border-t border-line bg-side px-4 py-2.5">
+          <span className="text-[12.5px] font-semibold text-ink-soft">已选 {selectedIds.length} 条</span>
+          <button type="button" className="ghost-btn" onClick={selectAllVisible}>
+            全选
+          </button>
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={!selectedIds.length}
+            onClick={clearSelection}
+          >
+            清空
+          </button>
+          <span className="flex-1" />
+          <button
+            ref={bulkPriorityRef}
+            type="button"
+            className="ghost-btn"
+            disabled={!selectedIds.length}
+            onClick={() => setBulkPriorityOpen((v) => !v)}
+          >
+            优先级
+            <Icon name="chev" size={13} />
+          </button>
+          <button
+            ref={bulkFolderRef}
+            type="button"
+            className="ghost-btn"
+            disabled={!selectedIds.length}
+            onClick={() => setBulkFolderOpen((v) => !v)}
+          >
+            移动到
+            <Icon name="chev" size={13} />
+          </button>
+          <button type="button" className="ghost-btn" disabled={!selectedIds.length} onClick={bulkComplete}>
+            完成
+          </button>
+          <button
+            type="button"
+            className="ghost-btn hover:!bg-[#fdf1f0] hover:!text-hi"
+            disabled={!selectedIds.length}
+            onClick={bulkDelete}
+          >
+            删除
+          </button>
+          <button type="button" className="ghost-btn" onClick={() => setSelectMode(false)}>
+            退出多选
+          </button>
+        </div>
+      ) : null}
+
+      <Dropdown
+        open={bulkPriorityOpen}
+        anchorRef={bulkPriorityRef}
+        onClose={() => setBulkPriorityOpen(false)}
+      >
+        {PRIORITY_ORDER.map((key) => (
+          <MenuItem
+            key={key}
+            onClick={() => {
+              setBulkPriorityOpen(false);
+              bulkSetPriority(key);
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: PRIORITY[key].color }} />
+              {PRIORITY[key].label}优先级
+            </span>
+          </MenuItem>
+        ))}
+      </Dropdown>
+
+      <Dropdown open={bulkFolderOpen} anchorRef={bulkFolderRef} onClose={() => setBulkFolderOpen(false)}>
+        {folders.map((folder) => (
+          <MenuItem
+            key={folder.id}
+            onClick={() => {
+              setBulkFolderOpen(false);
+              bulkSetFolder(folder.id);
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span
+                className="h-[9px] w-[9px] rounded-[3px]"
+                style={{ background: folderHex(folder.color) }}
+              />
+              {folder.name}
+            </span>
+          </MenuItem>
+        ))}
+        <MenuItem
+          onClick={() => {
+            setBulkFolderOpen(false);
+            bulkSetFolder(null);
+          }}
+        >
+          <span className="inline-flex items-center gap-2">
+            <span
+              className="h-[9px] w-[9px] rounded-[3px]"
+              style={{ background: NO_FOLDER_COLOR }}
+            />
+            未分类
+          </span>
+        </MenuItem>
+      </Dropdown>
 
       <Dropdown open={sortOpen} anchorRef={sortRef} onClose={() => setSortOpen(false)}>
         {SORT_ORDER.map((key) => (
@@ -342,9 +489,17 @@ export function TaskList() {
         >
           立即备份
         </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setMoreOpen(false);
+            openSettings();
+          }}
+        >
+          设置…
+        </MenuItem>
         <div className="mx-1.5 my-1 h-px bg-line" />
         <div className="px-2.5 py-1 text-[11.5px] leading-relaxed text-ink-faint">
-          删除是软删除，可在回收站里恢复（超 30 天自动清理）· 快捷键 1-5 切换视图
+          删除是软删除，可在回收站里恢复 · 快捷键 1-5 切换视图
         </div>
       </Dropdown>
     </section>

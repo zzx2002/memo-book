@@ -462,7 +462,178 @@ const withTrash = transfer.planImport(
 );
 expect(withTrash.newTasks.length === 0 && withTrash.skipped === 1, '回收站内容不参与导入', JSON.stringify(withTrash));
 
-/* ---------- 13. 持久化 ---------- */
+/* ---------- 13. 设置面板（v0.5） ---------- */
+const readStore = () => JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
+const readSettings = () =>
+  JSON.parse(dom.window.localStorage.getItem('memo-book-v1-settings') ?? '{}');
+
+await click(document.querySelector('button[title="设置"]') as HTMLElement);
+expect(
+  (document.body.textContent ?? '').includes('回收站保留'),
+  '设置面板可以打开',
+  '未找到设置面板内容'
+);
+
+await click(byText<HTMLElement>('.seg-btn', '7 天'));
+expect(readSettings().trashRetentionDays === 7, '回收站保留天数写入设置', JSON.stringify(readSettings()));
+await click(byText<HTMLElement>('.seg-btn', '关闭'));
+expect(readSettings().autoBackup === 'off', '自动备份频率写入设置', JSON.stringify(readSettings()));
+
+await act(async () => {
+  window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+});
+await flush();
+expect(
+  !(document.body.textContent ?? '').includes('回收站保留'),
+  'Esc 可关闭设置面板',
+  '设置面板没有关闭'
+);
+
+/* ---------- 14. 多选与批量操作（v0.5） ---------- */
+const multiBtn = document.querySelector('button[title^="多选"]') as HTMLElement;
+await click(multiBtn);
+expect((document.body.textContent ?? '').includes('已选 0 条'), '进入多选模式', '未进入多选模式');
+
+await act(async () => {
+  window.dispatchEvent(
+    new dom.window.KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true })
+  );
+});
+await flush();
+const visibleCount = activeRows().length;
+expect(
+  (document.body.textContent ?? '').includes(`已选 ${visibleCount} 条`),
+  `Ctrl+A 全选 ${visibleCount} 条`,
+  `实际提示：${(document.body.textContent ?? '').match(/已选 \d+ 条/)?.[0]}`
+);
+
+// 清空全选后只留两条选中，改成高优先级
+await click(byText<HTMLElement>('.ghost-btn', '清空'));
+await click(activeRows()[0]);
+await click(activeRows()[1]);
+const pickedIds = activeRows()
+  .filter((r) => r.classList.contains('active'))
+  .map((r) => Number(r.getAttribute('data-task')));
+expect(pickedIds.length === 2, '点选两条待办', `选中 ${pickedIds.length} 条`);
+
+await click(byText<HTMLElement>('.ghost-btn', '优先级'));
+await click(byText<HTMLElement>('.menu-item', '高优先级'));
+const highPicked = readStore().tasks.filter(
+  (t: { id: number; priority: string }) => pickedIds.includes(t.id) && t.priority === 'high'
+);
+expect(highPicked.length === 2, '批量改优先级生效', `命中 ${highPicked.length} 条`);
+
+// 批量完成
+await click(activeRows()[0]);
+await click(activeRows()[1]);
+const completeIds = activeRows()
+  .filter((r) => r.classList.contains('active'))
+  .map((r) => Number(r.getAttribute('data-task')));
+await click(byText<HTMLElement>('.ghost-btn', '完成'));
+const completedNow = readStore().tasks.filter(
+  (t: { id: number; done: boolean }) => completeIds.includes(t.id) && t.done
+);
+expect(completedNow.length === 2, '批量完成生效', `完成 ${completedNow.length} 条`);
+
+// 批量删除 + 整体撤销
+await click(activeRows()[0]);
+await click(activeRows()[1]);
+const deleteIds = activeRows()
+  .filter((r) => r.classList.contains('active'))
+  .map((r) => Number(r.getAttribute('data-task')));
+await click(byText<HTMLElement>('.ghost-btn', '删除'));
+const trashedNow = readStore().tasks.filter(
+  (t: { id: number; deletedAt: string | null }) => deleteIds.includes(t.id) && t.deletedAt
+);
+expect(trashedNow.length === 2, '批量删除进入回收站', `回收站 ${trashedNow.length} 条`);
+await click(byText<HTMLElement>('button', '撤销'));
+const restoredNow = readStore().tasks.filter(
+  (t: { id: number; deletedAt: string | null }) => deleteIds.includes(t.id) && !t.deletedAt
+);
+expect(restoredNow.length === 2, '批量删除可整体撤销', `恢复 ${restoredNow.length} 条`);
+
+await act(async () => {
+  window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+});
+await flush();
+expect(
+  !(document.body.textContent ?? '').includes('已选'),
+  'Esc 退出多选模式',
+  '多选模式未退出'
+);
+
+/* ---------- 15. 检查更新（v0.5 中间态） ---------- */
+const updates = await import('../src/lib/updates');
+expect(updates.compareVersions('0.5.1', '0.5.0') === 1, '版本号比较：0.5.1 > 0.5.0', '比较错误');
+expect(updates.compareVersions('v0.5.0', '0.5.0') === 0, '版本号比较：忽略前导 v', '比较错误');
+expect(updates.compareVersions('0.10.0', '0.9.9') === 1, '版本号比较：按数值而非字典序', '比较错误');
+expect(updates.compareVersions('1.0.0-beta', '1.0.0') === -1, '预发布版本低于正式版本', '比较错误');
+expect(updates.isNewer('0.5.0') === false, '同版本不算新版本', '判断错误');
+expect(updates.parseRelease({ draft: true, tag_name: 'v1.0.0' }) === null, '草稿 release 会被忽略', '未忽略草稿');
+expect(
+  updates.parseRelease({ tag_name: 'v1.2.3', html_url: 'https://example.com', body: '说明' })?.version ===
+    '1.2.3',
+  'release JSON 解析正确',
+  '解析错误'
+);
+
+const nativeFetch = (globalThis as { fetch?: unknown }).fetch;
+const stubFetch = (payload: unknown, status = 200) =>
+  (async () =>
+    ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => payload
+    }) as unknown as Response) as unknown as typeof fetch;
+
+await click(document.querySelector('button[title="设置"]') as HTMLElement);
+
+define(
+  'fetch',
+  stubFetch({
+    tag_name: 'v9.9.9',
+    html_url: 'https://github.com/zzx2002/memo-book/releases/tag/v9.9.9',
+    body: '这是测试用的更新说明',
+    published_at: '2026-09-21T02:00:00Z'
+  })
+);
+await click(byText<HTMLElement>('.ghost-btn', '检查更新'));
+expect(
+  (document.body.textContent ?? '').includes('发现新版本') &&
+    (document.body.textContent ?? '').includes('9.9.9'),
+  '发现新版本时给出提示与版本号',
+  `面板内容未包含新版本信息`
+);
+expect(!!byText<HTMLElement>('.ghost-btn', '前往下载'), '提供「前往下载」按钮', '没有下载按钮');
+
+define('fetch', stubFetch({ tag_name: 'v0.5.0', html_url: 'https://example.com' }));
+await click(byText<HTMLElement>('.ghost-btn', '检查更新'));
+expect(
+  (document.body.textContent ?? '').includes('已是最新版本'),
+  '同版本时提示已是最新',
+  '未提示已是最新'
+);
+
+define(
+  'fetch',
+  (async () => {
+    throw new Error('模拟断网');
+  }) as unknown as typeof fetch
+);
+await click(byText<HTMLElement>('.ghost-btn', '检查更新'));
+expect(
+  (document.body.textContent ?? '').includes('检查失败'),
+  '网络异常时给出可读错误',
+  '未显示失败信息'
+);
+
+define('fetch', nativeFetch);
+await act(async () => {
+  window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+});
+await flush();
+
+/* ---------- 16. 持久化 ---------- */
 const stored = JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
 expect(
   !!stored.tasks?.some((t: { title: string }) => t.title === '冒烟测试：写一条新待办'),

@@ -13,6 +13,9 @@ interface TaskRowProps {
   draggable?: boolean;
   /** 手动排序模式下常显手柄，其余模式 hover 才显示 */
   gripAlways?: boolean;
+  /** 多选模式：点击整行切换勾选 */
+  selectable?: boolean;
+  checked?: boolean;
   dragging?: boolean;
   dropTarget?: boolean;
   onDragStart?: () => void;
@@ -26,6 +29,8 @@ export function TaskRow({
   selected,
   draggable = false,
   gripAlways = false,
+  selectable = false,
+  checked = false,
   dragging = false,
   dropTarget = false,
   onDragStart,
@@ -33,7 +38,16 @@ export function TaskRow({
   onDrop,
   onDragEnd
 }: TaskRowProps) {
-  const { toggleDone, select, folderById, editingId, startEdit, commitEdit, cancelEdit } = useApp();
+  const {
+    toggleDone,
+    select,
+    folderById,
+    editingId,
+    startEdit,
+    commitEdit,
+    cancelEdit,
+    toggleSelected
+  } = useApp();
   const folder = folderById(task.folderId);
   const today = todayISO();
   const cancelled = useRef(false);
@@ -51,23 +65,27 @@ export function TaskRow({
   const className = [
     'task-row',
     task.done ? 'done' : '',
-    selected ? 'active' : '',
+    selected || checked ? 'active' : '',
     dragging ? 'dragging' : '',
     dropTarget ? 'drop-target' : ''
   ]
     .filter(Boolean)
     .join(' ');
 
+  const dragEnabled = draggable && !editing && !selectable;
+
   return (
     <div
       className={className}
       data-task={task.id}
-      draggable={draggable && !editing}
-      onClick={() => select(task.id)}
+      draggable={dragEnabled}
+      onClick={() => (selectable ? toggleSelected(task.id) : select(task.id))}
       // 双击进入内联重命名（标记完成请用左侧勾选框，避免误触）
-      onDoubleClick={() => !task.done && startEdit(task.id)}
+      onDoubleClick={() => {
+        if (!selectable && !task.done) startEdit(task.id);
+      }}
       onDragStart={
-        draggable && !editing
+        dragEnabled
           ? (e) => {
               e.dataTransfer?.setData('text/plain', String(task.id));
               if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
@@ -76,7 +94,7 @@ export function TaskRow({
           : undefined
       }
       onDragOver={
-        draggable && !editing
+        dragEnabled
           ? (e) => {
               e.preventDefault();
               if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -85,16 +103,25 @@ export function TaskRow({
           : undefined
       }
       onDrop={
-        draggable && !editing
+        dragEnabled
           ? (e) => {
               e.preventDefault();
               onDrop?.();
             }
           : undefined
       }
-      onDragEnd={draggable && !editing ? () => onDragEnd?.() : undefined}
+      onDragEnd={dragEnabled ? () => onDragEnd?.() : undefined}
     >
-      {draggable ? (
+      {selectable ? (
+        <span
+          role="checkbox"
+          aria-checked={checked}
+          aria-label="选择这条待办"
+          className={`check rounded-[5px]${checked ? ' checked !border-accent !bg-accent' : ''}`}
+        >
+          <Icon name="check" size={11} />
+        </span>
+      ) : draggable ? (
         <span className={`grip${gripAlways ? ' always' : ''}`} title="拖拽调整顺序">
           <Icon name="grip" size={13} />
         </span>
@@ -107,6 +134,10 @@ export function TaskRow({
         onDragStart={(e) => e.preventDefault()}
         onClick={(e) => {
           e.stopPropagation();
+          if (selectable) {
+            toggleSelected(task.id);
+            return;
+          }
           toggleDone(task.id);
         }}
       >

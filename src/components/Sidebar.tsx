@@ -22,7 +22,8 @@ export function Sidebar() {
     removeFolder,
     nextFolderColor,
     focusAddInput,
-    storage
+    storage,
+    openSettings
   } = useApp();
 
   const [adding, setAdding] = useState(false);
@@ -133,8 +134,16 @@ export function Sidebar() {
           <Icon name="plus" size={15} />
           新增待办
         </button>
-        <div className="pt-2 text-center text-[11px] leading-tight text-ink-faint">
-          {storage === 'sqlite' ? '本地 SQLite 存储' : '浏览器预览模式 · localStorage'}
+        <div className="flex items-center justify-center gap-1.5 pt-2 text-[11px] leading-tight text-ink-faint">
+          <span>{storage === 'sqlite' ? '本地 SQLite 存储' : '浏览器预览模式 · localStorage'}</span>
+          <button
+            type="button"
+            title="设置"
+            className="grid h-5 w-5 flex-none place-items-center rounded-md hover:bg-[#e7e9ee] hover:text-ink-soft"
+            onClick={openSettings}
+          >
+            <Icon name="settings" size={13} />
+          </button>
         </div>
       </div>
     </aside>

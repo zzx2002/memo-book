@@ -34,6 +34,8 @@ if (caps.permissions.includes('sql:allow-execute')) ok('已声明 sql:allow-exec
 else no('缺少 sql:allow-execute，db.execute 会被拒绝');
 if (caps.permissions.includes('notification:default')) ok('已声明 notification:default（到点提醒必需）');
 else no('缺少 notification:default，sendNotification 会被拒绝');
+if (caps.permissions.includes('autostart:default')) ok('已声明 autostart:default（开机自启必需）');
+else no('缺少 autostart:default，enable/disable 会被拒绝');
 
 // Rust 侧依赖与插件注册要和前端调用对得上
 const cargo = readFileSync('src-tauri/Cargo.toml', 'utf8');
@@ -42,7 +44,8 @@ const CARGO_DEPS = [
   'tauri-plugin-dialog',
   'tauri-plugin-global-shortcut',
   'tauri-plugin-window-state',
-  'tauri-plugin-single-instance'
+  'tauri-plugin-single-instance',
+  'tauri-plugin-autostart'
 ];
 for (const dep of CARGO_DEPS) {
   if (cargo.includes(dep)) ok(`Cargo.toml 已引入 ${dep}`);
@@ -58,6 +61,7 @@ const RUST_MARKERS = [
   ['tauri_plugin_single_instance', '单实例插件'],
   ['tauri_plugin_window_state', '窗口状态插件'],
   ['tauri_plugin_global_shortcut', '全局快捷键插件'],
+  ['tauri_plugin_autostart', '开机自启插件'],
   ['build_tray', '托盘构建'],
   ['CmdOrCtrl+Shift+Space', '快速新增快捷键'],
   ['WindowEvent::CloseRequested', '关闭到托盘']
@@ -71,10 +75,29 @@ for (const n of ['1', '2', '3', '4']) {
   else no(`lib.rs 缺少迁移 v${n}`);
 }
 const filesRs = readFileSync('src-tauri/src/files.rs', 'utf8');
-for (const cmd of ['export_text_file', 'import_text_file', 'backup_now', 'list_backups', 'show_main_window']) {
+for (const cmd of [
+  'export_text_file',
+  'import_text_file',
+  'backup_now',
+  'list_backups',
+  'show_main_window',
+  'data_paths',
+  'open_data_dir',
+  'open_url'
+]) {
   if (libRs.includes(`files::${cmd}`) && filesRs.includes(`pub async fn ${cmd}`)) ok(`Rust 命令已注册：${cmd}`);
   else if (libRs.includes(`files::${cmd}`) && filesRs.includes(`pub fn ${cmd}`)) ok(`Rust 命令已注册：${cmd}`);
   else no(`Rust 命令未注册或未实现：${cmd}`);
+}
+
+// 版本号三处必须一致，另加一份给界面展示的常量
+const versionConst = readFileSync('src/lib/version.ts', 'utf8').match(/APP_VERSION\s*=\s*'([^']+)'/)?.[1];
+const packageVersion = JSON.parse(readFileSync('package.json', 'utf8')).version;
+const confVersion = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).version;
+if (versionConst === packageVersion && packageVersion === confVersion) {
+  ok(`版本号一致：v${packageVersion}（package.json / tauri.conf.json / src/lib/version.ts）`);
+} else {
+  no(`版本号不一致：package.json=${packageVersion} tauri.conf.json=${confVersion} version.ts=${versionConst}`);
 }
 
 const JS_PLUGINS = ['@tauri-apps/plugin-sql', '@tauri-apps/plugin-notification'];

@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type RefObject
 } from 'react';
-import { PALETTE, SMART_VIEWS } from '../lib/constants';
+import { PALETTE, PRIORITY, SMART_VIEWS } from '../lib/constants';
 import { fmtMD, todayISO } from '../lib/dates';
 import { sendReminder } from '../lib/notify';
 import { reminderBody, splitDueReminders } from '../lib/reminder';
@@ -21,20 +21,34 @@ import {
   exportFile,
   importFile,
   onQuickAdd,
+  openUrl,
   showMainWindow,
   type ExportFormat
 } from '../lib/desktop';
 import { buildExportPayload, parseImport, planImport, toJson, toMarkdown } from '../lib/transfer';
+import {
+  AUTO_BACKUP_HOURS,
+  loadSettings,
+  normalizeSettings,
+  saveSettings,
+  type Settings
+} from '../lib/settings';
+import { fetchLatestRelease, isNewer, RELEASES_PAGE, type ReleaseInfo } from '../lib/updates';
 import type { Folder, FolderColor, Priority, SortKey, Task, TaskPatch, View } from '../types';
 
 const PRIORITY_WEIGHT: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
+/** 统一的 patch 合并：done 变化时同步 completedAt */
+function mergePatch(task: Task, patch: TaskPatch): Task {
+  return {
+    ...task,
+    ...patch,
+    completedAt: patch.done === undefined ? task.completedAt : patch.done ? new Date().toISOString() : null
+  };
+}
+
 /** 提醒轮询间隔与跨天刷新间隔 */
 const HEARTBEAT_MS = 30 * 1000;
-/** 回收站保留天数，超过自动清理 */
-const TRASH_RETENTION_DAYS = 30;
-/** 自动备份：距上次备份超过这个小时数就在启动时备一份 */
-const AUTO_BACKUP_HOURS = 20;
 const LAST_BACKUP_KEY = 'memo-book-last-backup';
 
 export interface Counts {
@@ -51,6 +65,9 @@ export interface ToastState {
   /** 可撤销操作 */
   undo?: () => void;
 }
+
+/** 检查更新的状态机 */
+export type UpdateStatus = 'idle' | 'checking' | 'latest' | 'available' | 'error';
 
 interface AppApi {
   ready: boolean;
@@ -91,6 +108,30 @@ interface AppApi {
   importData: () => Promise<void>;
   /** 立刻写一份备份 */
   runBackup: (silent?: boolean) => Promise<void>;
+  /** 应用设置 */
+  settings: Settings;
+  updateSettings: (patch: Partial<Settings>) => void;
+  /** 设置面板开关 */
+  settingsOpen: boolean;
+  openSettings: () => void;
+  closeSettings: () => void;
+  /** 多选与批量操作 */
+  selectMode: boolean;
+  setSelectMode: (on: boolean) => void;
+  selectedIds: number[];
+  toggleSelected: (id: number) => void;
+  selectAllVisible: () => void;
+  clearSelection: () => void;
+  bulkComplete: () => void;
+  bulkDelete: () => void;
+  bulkSetPriority: (priority: Priority) => void;
+  bulkSetFolder: (folderId: number | null) => void;
+  /** 检查更新（中间态：只提示 + 打开下载页，不做自动安装） */
+  updateStatus: UpdateStatus;
+  updateInfo: ReleaseInfo | null;
+  updateError: string | null;
+  checkForUpdates: (silent?: boolean) => Promise<void>;
+  openReleasePage: () => Promise<void>;
   addInputRef: RefObject<HTMLInputElement>;
   focusAddInput: () => void;
   setView: (view: View) => void;
@@ -136,6 +177,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [trash, setTrash] = useState<Task[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+  const [settings, setSettings] = useState<Settings>(() => loadSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectMode, setSelectModeState] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const addInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -146,14 +194,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const trashRef = useRef<Task[]>([]);
   const navRef = useRef<{ ids: number[]; index: number }>({ ids: [], index: -1 });
   const beatRef = useRef<() => void>(() => {});
+  const checkUpdatesRef = useRef<(silent?: boolean) => Promise<void>>(async () => {});
+  const autoCheckDone = useRef(false);
 
   /* ---------- 初始载入 ---------- */
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        // 回收站自动清理：超过 30 天的软删除记录直接抹掉，避免库无限膨胀
-        await repo.purgeExpiredTrash(TRASH_RETENTION_DAYS).catch(() => 0);
+        // 回收站自动清理：按设置的天数抹掉超期的软删除记录，避免库无限膨胀
+        if (settings.trashRetentionDays > 0) {
+          await repo.purgeExpiredTrash(settings.trashRetentionDays).catch(() => 0);
+        }
         const [fs, ts, tr] = await Promise.all([
           repo.listFolders(),
           repo.listTasks(),
@@ -321,18 +373,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [notify]
   );
 
-  // 启动时按间隔自动备份一次（默认约每天一次）
+  // 启动时按间隔自动备份一次（频率由设置决定）
   useEffect(() => {
     if (!ready) return;
+    const hours = AUTO_BACKUP_HOURS[settings.autoBackup];
+    if (!Number.isFinite(hours)) return;
     let last = 0;
     try {
       last = Number(localStorage.getItem(LAST_BACKUP_KEY) ?? 0);
     } catch {
       last = 0;
     }
-    if (Date.now() - last < AUTO_BACKUP_HOURS * 3600 * 1000) return;
+    if (Date.now() - last < hours * 3600 * 1000) return;
     void runBackup(true);
-  }, [ready, runBackup]);
+  }, [ready, runBackup, settings.autoBackup]);
 
   const folderById = useCallback(
     (id: number | null) => (id == null ? null : folders.find((f) => f.id === id) ?? null),
@@ -465,22 +519,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateTask = useCallback(
     (id: number, patch: TaskPatch) => {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === id
-            ? {
-                ...t,
-                ...patch,
-                completedAt:
-                  patch.done === undefined ? t.completedAt : patch.done ? new Date().toISOString() : null
-              }
-            : t
-        )
-      );
+      setTasks((prev) => prev.map((t) => (t.id === id ? mergePatch(t, patch) : t)));
       void repo.updateTask(id, patch).catch(() => notify('保存失败'));
     },
     [notify, repo]
   );
+
+  /* ---------- 设置 ---------- */
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setSettings((prev) => {
+      const next = normalizeSettings({ ...prev, ...patch });
+      saveSettings(next);
+      return next;
+    });
+  }, []);
+
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  /* ---------- 多选：选中状态的维护 ---------- */
+  const clearSelection = useCallback(() => setSelectedIds([]), []);
+
+  const setSelectMode = useCallback((on: boolean) => {
+    setSelectModeState(on);
+    if (!on) setSelectedIds([]);
+  }, []);
+
+  const toggleSelected = useCallback((id: number) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const selectAllVisible = useCallback(() => setSelectedIds(navRef.current.ids.slice()), []);
 
   /** 完成一个重复任务：本轮标记完成，并自动生成下一次实例 */
   const completeRepeating = useCallback(
@@ -647,9 +716,131 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })();
   }, [notify, repo]);
 
+  /* ---------- 批量操作（依赖上面的 completeRepeating / folderById） ---------- */
+  /** 批量改字段：本地乐观更新 + 批量落库 */
+  const bulkPatch = useCallback(
+    (patch: TaskPatch, message: string) => {
+      const ids = selectedIds.slice();
+      if (!ids.length) return;
+      const set = new Set(ids);
+      setTasks((prev) => prev.map((t) => (set.has(t.id) ? mergePatch(t, patch) : t)));
+      void Promise.all(ids.map((id) => repo.updateTask(id, patch))).catch(() => notify('保存失败'));
+      notify(message);
+      clearSelection();
+    },
+    [clearSelection, notify, repo, selectedIds]
+  );
+
+  const bulkSetPriority = useCallback(
+    (priority: Priority) => {
+      const count = selectedIds.length;
+      bulkPatch({ priority }, `已把 ${count} 条设为${PRIORITY[priority].label}优先级`);
+    },
+    [bulkPatch, selectedIds.length]
+  );
+
+  const bulkSetFolder = useCallback(
+    (folderId: number | null) => {
+      const count = selectedIds.length;
+      const name = folderId == null ? '未分类' : folderById(folderId)?.name ?? '未分类';
+      bulkPatch({ folderId }, `已把 ${count} 条移动到「${name}」`);
+    },
+    [bulkPatch, folderById, selectedIds.length]
+  );
+
+  /** 批量完成：重复任务照常生成下一次 */
+  const bulkComplete = useCallback(() => {
+    const ids = new Set(selectedIds);
+    const targets = tasks.filter((t) => ids.has(t.id) && !t.done);
+    if (!targets.length) {
+      notify('选中的待办都已完成');
+      clearSelection();
+      return;
+    }
+    const plain = targets.filter((t) => t.repeat === 'none').map((t) => t.id);
+    const repeating = targets.filter((t) => t.repeat !== 'none');
+    if (plain.length) {
+      const plainSet = new Set(plain);
+      const stamp = new Date().toISOString();
+      setTasks((prev) =>
+        prev.map((t) => (plainSet.has(t.id) ? { ...t, done: true, completedAt: stamp } : t))
+      );
+      void Promise.all(plain.map((id) => repo.updateTask(id, { done: true, completedAt: stamp }))).catch(
+        () => notify('保存失败')
+      );
+    }
+    for (const task of repeating) void completeRepeating(task);
+    notify(`已完成 ${targets.length} 条`);
+    clearSelection();
+  }, [clearSelection, completeRepeating, notify, repo, selectedIds, tasks]);
+
+  /** 批量删除（软删除，可撤销） */
+  const bulkDelete = useCallback(() => {
+    const ids = new Set(selectedIds);
+    const targets = tasks.filter((t) => ids.has(t.id));
+    if (!targets.length) return;
+    const stamp = new Date().toISOString();
+    setTasks((prev) => prev.filter((t) => !ids.has(t.id)));
+    setTrash((prev) => [...targets.map((t) => ({ ...t, deletedAt: stamp })), ...prev]);
+    setSelectedId((cur) => (cur != null && ids.has(cur) ? null : cur));
+    clearSelection();
+    void Promise.all(targets.map((t) => repo.deleteTask(t.id))).catch(() => notify('删除失败'));
+    notify(`已移入回收站 ${targets.length} 条`, () => {
+      setTrash((prev) => prev.filter((t) => !ids.has(t.id)));
+      setTasks((prev) => [...prev, ...targets]);
+      void Promise.all(targets.map((t) => repo.restoreTask(t.id))).catch(() => notify('撤销失败'));
+      notify('已恢复');
+    });
+  }, [clearSelection, notify, repo, selectedIds, tasks]);
+
+  /* ---------- 检查更新（中间态：只提示并可跳转下载页） ---------- */
+  const openReleasePage = useCallback(async () => {
+    const url = updateInfo?.url ?? RELEASES_PAGE;
+    const opened = await openUrl(url);
+    if (!opened) notify('打开下载页失败，可手动访问 ' + url);
+  }, [notify, updateInfo]);
+
+  const checkForUpdates = useCallback(
+    async (silent = false) => {
+      setUpdateStatus('checking');
+      setUpdateError(null);
+      try {
+        const info = await fetchLatestRelease();
+        if (isNewer(info.version)) {
+          setUpdateInfo(info);
+          setUpdateStatus('available');
+          notify(`发现新版本 v${info.version}`, () => {
+            void openReleasePage();
+          });
+        } else {
+          setUpdateInfo(null);
+          setUpdateStatus('latest');
+          if (!silent) notify('已是最新版本');
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        setUpdateError(message);
+        setUpdateStatus(silent ? 'idle' : 'error');
+        if (!silent) notify('检查更新失败：' + message);
+      }
+    },
+    [notify, openReleasePage]
+  );
+
+  useEffect(() => {
+    checkUpdatesRef.current = checkForUpdates;
+  }, [checkForUpdates]);
+
+  // 启动后静默检查一次，有新版本才提示，失败不打扰
+  useEffect(() => {
+    if (!ready || autoCheckDone.current) return;
+    autoCheckDone.current = true;
+    const timer = window.setTimeout(() => void checkUpdatesRef.current(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
+
   /* ---------- 文件夹 ---------- */
-  const addFolder = useCallback(
-    async (name: string, color: FolderColor) => {
+  const addFolder = useCallback(    async (name: string, color: FolderColor) => {
       const value = name.trim();
       if (!value) return;
       try {
@@ -682,7 +873,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const el = document.activeElement;
       const typing = !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
       if (e.key === 'Escape') {
-        if (!typing) setSelectedId(null);
+        if (!typing) {
+          if (settingsOpen) {
+            setSettingsOpen(false);
+            return;
+          }
+          if (selectMode) {
+            setSelectModeState(false);
+            setSelectedIds([]);
+            return;
+          }
+          setSelectedId(null);
+        }
         return;
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) {
@@ -690,6 +892,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'k')) {
           e.preventDefault();
           focusSearch();
+        }
+        // 多选模式下 Ctrl/Cmd+A 全选当前列表
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A') && selectMode && !typing) {
+          e.preventDefault();
+          selectAllVisible();
         }
         return;
       }
@@ -723,7 +930,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [focusAddInput, focusSearch, setView]);
+  }, [focusAddInput, focusSearch, selectAllVisible, selectMode, setView, settingsOpen]);
 
   const palette = useMemo(() => {
     const used = new Set(folders.map((f) => f.color));
@@ -761,6 +968,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     exportData,
     importData,
     runBackup,
+    settings,
+    updateSettings,
+    settingsOpen,
+    openSettings,
+    closeSettings,
+    selectMode,
+    setSelectMode,
+    selectedIds,
+    toggleSelected,
+    selectAllVisible,
+    clearSelection,
+    bulkComplete,
+    bulkDelete,
+    bulkSetPriority,
+    bulkSetFolder,
+    updateStatus,
+    updateInfo,
+    updateError,
+    checkForUpdates,
+    openReleasePage,
     addInputRef,
     focusAddInput,
     setView,

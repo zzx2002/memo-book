@@ -1,0 +1,30 @@
+feat: v0.5 设置面板 / 开机自启 / 批量操作 / 检查更新
+
+设置面板（侧栏底部齿轮，或「⋯」菜单 → 设置…）
+- 开机自启开关：tauri-plugin-autostart，打开面板时读取系统真实状态；浏览器预览下显示为不可用
+- 自动备份频率：每天 / 每周 / 关闭；回收站保留：7 / 30 / 90 天 / 永久保留
+- 数据位置：数据库与备份目录的真实路径、一键打开数据目录、立即备份、最近备份列表
+- 检查更新（中间态）：读取 GitHub 最新 release 与当前版本比较，有新版本时提示版本号与更新说明，
+  可一键跳转下载页；不下载、不安装、不需要签名密钥。启动 15 秒后静默检查一次，失败不打扰
+- 关于：版本号（新增 src/lib/version.ts）与注意事项
+
+批量操作
+- 列表头「多选」进入多选模式：点行勾选、Ctrl/Cmd+A 全选、Esc 退出，多选时自动禁用拖拽
+- 底部工具条支持批量 完成 / 改优先级 / 移动到文件夹 / 删除
+- 批量删除是软删除且整体可撤销；批量完成对重复任务同样按规则生成下一次实例
+
+Rust
+- 新增 open_url 命令（仅放行 https 且拒绝空白字符），供「前往下载」使用
+- 新增 data_paths / open_data_dir 命令，供设置面板展示与打开数据目录
+- 注册 tauri-plugin-autostart，capability 增加 autostart:default
+
+工程
+- 版本号收敛到 src/lib/version.ts，并在 check:config 中校验它与 package.json、tauri.conf.json 三处一致
+- 更新检查的版本比较与解析写成纯函数（src/lib/updates.ts，fetcher 可注入）：
+  忽略前导 v、按数值比较（0.10.0 > 0.9.9）、预发布版低于正式版、忽略 draft/prerelease
+
+验证
+- pnpm check 全绿：配置校验（新增 autostart 权限、open_url 命令、版本号一致性断言）、
+  四个迁移实跑 + 回收站超期清理演练、jsdom 交互测试由 57 项增至 82 项
+  （新增设置面板、多选批量、版本比较、更新检查三态等用例）
+- cargo check 通过；pnpm build 通过

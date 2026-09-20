@@ -7,6 +7,7 @@
     "core:default",
     "sql:default",
     "sql:allow-execute",
-    "notification:default"
+    "notification:default",
+    "autostart:default"
   ]
 }

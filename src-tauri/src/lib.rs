@@ -112,12 +112,16 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             files::export_text_file,
             files::import_text_file,
             files::backup_now,
             files::list_backups,
             files::show_main_window,
+            files::data_paths,
+            files::open_data_dir,
+            files::open_url,
         ])
         .setup(|app| {
             build_tray(app.handle())?;

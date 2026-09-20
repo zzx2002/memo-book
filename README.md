@@ -32,15 +32,19 @@
 │  │  ├─ AddInput.tsx            # 快速新增（回车连续添加）
 │  │  ├─ DetailPanel.tsx         # 右侧详情：说明、优先级、文件夹、排期/截止/提醒、重复、备注
 │  │  ├─ Dropdown.tsx            # 固定定位下拉菜单
+│  │  ├─ SettingsDialog.tsx      # 设置面板（开机自启 / 备份 / 回收站 / 数据位置 / 关于）
 │  │  └─ Icon.tsx                # 内联 SVG 图标
-│  ├─ state/AppContext.tsx       # 全局状态、统计、搜索筛选、排序、重复任务、提醒心跳、回收站、快捷键
+│  ├─ state/AppContext.tsx       # 全局状态、统计、搜索筛选、排序、重复任务、提醒心跳、回收站、多选批量、快捷键
 │  └─ lib
 │     ├─ dates.ts                # 日期格式化与加减（4月25日 (周五)）
 │     ├─ repeat.ts               # 重复规则：下一次日期推算、生成下一实例
 │     ├─ reminder.ts             # 提醒调度纯函数（到点/过期分流、提前量）
 │     ├─ notify.ts               # 通知发送：Tauri 原生 / Web Notification 降级
-│     ├─ desktop.ts              # 桌面能力封装：导出/导入/备份/唤起窗口/快捷键事件
+│     ├─ desktop.ts              # 桌面能力封装：导出/导入/备份/自启/数据路径/快捷键事件
 │     ├─ transfer.ts             # 导入导出纯函数（JSON 快照、Markdown、合并判重）
+│     ├─ updates.ts              # 版本号比较与 GitHub release 检查（纯函数 + 可注入 fetcher）
+│     ├─ settings.ts             # 应用设置读写与默认值
+│     ├─ version.ts              # 界面展示用的版本号（与 package.json 由 check:config 校验一致）
 │     ├─ reorder.ts              # 手动排序纯函数（moveTo / toSortOrder）
 │     ├─ constants.ts            # 优先级 / 文件夹配色 / 视图 / 排序常量
 │     ├─ seed.ts                 # 示例数据（与设计稿一致）
@@ -102,18 +106,18 @@ pnpm desktop:build      # 打包桌面安装包
 | 命令 | 作用 |
 | --- | --- |
 | `pnpm typecheck` | TypeScript 全量类型检查 |
-| `pnpm check:config` | 校验 tauri.conf.json / 权限 / 图标是否齐备 |
+| `pnpm check:config` | 校验 tauri.conf.json / 权限 / 图标 / 插件注册 / 三处版本号是否一致 |
 | `pnpm check:sql` | 用 Node 内置 `node:sqlite` 在内存库里跑一遍全部迁移，打印各视图条数并演练排序回写、软删除/恢复、提醒标记、回收站超期清理 |
-| `pnpm check:ui` | jsdom 中真实挂载 App，覆盖搜索、拖拽排序、重复任务、日期选择、回收站与撤销、内联重命名、键盘导航、提醒调度、提前量、导入导出（57 项断言） |
+| `pnpm check:ui` | jsdom 中真实挂载 App，覆盖搜索、拖拽排序、重复任务、日期选择、回收站与撤销、内联重命名、键盘导航、提醒调度、提前量、导入导出、设置面板、多选批量操作（71 项断言） |
 
 ### 权限与窗口配置说明
 
 - `src-tauri/capabilities/default.json` 里的 `sql:default` **只包含** `allow-load / allow-select / allow-close`，
   写入类操作必须额外声明 `sql:allow-execute`，否则 `db.execute` 会在运行时被权限系统拒绝。
-- 到点提醒需要 `notification:default` 权限，否则 `sendNotification` 会被拒绝。
+- 到点提醒需要 `notification:default` 权限，开机自启需要 `autostart:default`，否则对应调用会被拒绝。
 - `tauri.conf.json` 中窗口必须设置 `"dragDropEnabled": false`：该选项默认为 `true`，会在 Windows 上注册
   系统级文件拖放，从而**抢走前端的 HTML5 拖拽事件**，导致列表拖拽排序完全失效。
-  以上都由 `pnpm check:config` 兜底校验（含 Cargo.toml 依赖与 lib.rs 插件/迁移注册），避免回归。
+  以上都由 `pnpm check:config` 兜底校验（含 Cargo.toml 依赖、lib.rs 插件/迁移注册、Rust 命令注册），避免回归。
 
 ## 数据存储
 
@@ -126,7 +130,7 @@ pnpm desktop:build      # 打包桌面安装包
   - `0003_reminder_and_trash.sql` 提醒记录 + 软删除
   - `0004_remind_before.sql` 提醒提前量
 - 首次启动会写入 3 个文件夹与 13 条示例待办；"⋯" 菜单里可随时再次载入示例数据
-- 删除是**软删除**：`deleted_at` 非空即进回收站，可恢复；超过 30 天启动时自动清理，「清空回收站」则立即 `DELETE`
+- 删除是**软删除**：`deleted_at` 非空即进回收站，可恢复；超期（默认 30 天，可在设置里改）启动时自动清理，「清空回收站」则立即 `DELETE`
 - 导出的 JSON 是完整快照（含文件夹与回收站），导入为**只新增不覆盖**：文件夹按名称复用，待办以「标题 + 截止日期」判重
 
 ## 已实现
@@ -174,6 +178,24 @@ pnpm desktop:build      # 打包桌面安装包
 - **提醒提前量**：详情面板新增「提前提醒」下拉（准时 / 5 / 15 / 30 分钟 / 1 小时 / 1 天），实际触发时刻 = 提醒时间 − 提前量
 - **提醒唤起窗口**：到点提醒时若窗口处于最小化/托盘状态会自动唤出；用户正在别处工作时只弹通知、不抢焦点
 
+### v0.5 设置面板 / 开机自启 / 批量操作
+
+- **设置面板**（侧栏底部齿轮，或 `⋯` 菜单 → 设置…）：
+  - 开机自启开关（`tauri-plugin-autostart`，与系统状态双向同步；浏览器预览下显示为不可用）
+  - 自动备份频率：每天 / 每周 / 关闭
+  - 回收站保留：7 / 30 / 90 天 / 永久保留（0 表示不自动清理）
+  - 数据位置：真实数据库与备份目录路径、一键打开数据目录、立即备份、最近备份列表
+  - **检查更新**（中间态）：读取 GitHub 上最新 release 的版本号并与当前版本比较，
+    有新版本时提示版本号与更新说明，可一键跳转下载页；**不下载、不安装、不需要签名密钥**
+    - 启动 15 秒后静默检查一次（只在发现新版本时提示，失败不打扰）
+    - 手动检查失败时给出可读原因，并提供「手动打开下载页」
+  - 关于：版本号与快捷键提示
+- **批量操作**：列表头「多选」按钮进入多选模式，点行即勾选，`Ctrl/Cmd+A` 全选、`Esc` 退出；
+  底部工具条支持批量 **完成 / 改优先级 / 移动到文件夹 / 删除**，其中删除是软删除且整体可撤销
+  - 批量完成对重复任务同样会按规则生成下一次实例
+- **版本号收敛**：新增 `src/lib/version.ts` 作为界面展示口径，`check:config` 会校验它与
+  `package.json`、`tauri.conf.json` 三处一致
+
 ### 快捷键
 
 | 按键 | 作用 |
@@ -183,9 +205,10 @@ pnpm desktop:build      # 打包桌面安装包
 | `/` 或 `Ctrl/Cmd+K` | 聚焦搜索框 |
 | `1` ~ `5` | 切换 收件箱 / 今天 / 即将到来 / 已完成 / 回收站 |
 | `↑` `↓` | 在当前列表里上下移动选中项 |
+| `Ctrl/Cmd+A` | 多选模式下全选当前列表 |
 | 双击标题 | 就地重命名（`Enter` 提交，`Esc` 取消） |
 | `Enter` | 新增待办（可连续输入） |
-| `Esc` | 清空搜索 / 关闭详情面板 / 取消输入 |
+| `Esc` | 关闭设置面板 / 退出多选 / 清空搜索 / 关闭详情面板 |
 
 ## 发布新版本
 
@@ -210,9 +233,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Version
 
 ## 后续规划
 
-- 开机自启开关、自动更新（updater 插件）与安装包签名
+- 自动更新（updater 插件）与安装包签名 —— 目前只做到「检查更新 + 跳转下载页」的中间态。
+  上完整方案需要：生成签名密钥对（**私钥丢失将永久失去给已装用户推送更新的能力**，须放密码管理器 + 离线备份）、
+  构建时注入 `TAURI_SIGNING_PRIVATE_KEY`、`createUpdaterArtifacts: true`、发布时额外挂 `latest.json`
+  （`signature` 必须是 `.sig` 的文件内容而非链接）、处理 Windows 上安装时的强制退出（`on_before_exit`）
 - 子任务与清单模板；每 N 天 / 工作日重复
-- 多选批量操作（批量改优先级、文件夹、删除）
 - 全局搜索（跨视图）与命中片段高亮
-- 深色主题（跟随系统）
+- 深色主题（跟随系统）—— 需要真机逐屏校对配色，建议单独一轮做
 - 列表虚拟滚动（数据量上千后）

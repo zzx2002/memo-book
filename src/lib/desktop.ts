@@ -116,3 +116,88 @@ export function backupStamp(now: Date = new Date()): string {
     now.getMinutes()
   )}`;
 }
+
+/* ---------------- 设置面板用到的桌面能力 ---------------- */
+
+export interface DataPaths {
+  database: string;
+  backups: string;
+  data_dir: string;
+}
+
+/** 开机自启是否已开启；浏览器预览恒为 null（不支持） */
+export async function isAutostartEnabled(): Promise<boolean | null> {
+  if (!isDesktop()) return null;
+  try {
+    const mod = await import('@tauri-apps/plugin-autostart');
+    return await mod.isEnabled();
+  } catch {
+    return null;
+  }
+}
+
+/** 切换开机自启；返回切换后的状态，失败返回 null */
+export async function setAutostart(enabled: boolean): Promise<boolean | null> {
+  if (!isDesktop()) return null;
+  try {
+    const mod = await import('@tauri-apps/plugin-autostart');
+    if (enabled) await mod.enable();
+    else await mod.disable();
+    return await mod.isEnabled();
+  } catch {
+    return null;
+  }
+}
+
+/** 数据库与备份的真实路径 */
+export async function getDataPaths(): Promise<DataPaths | null> {
+  if (!isDesktop()) return null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<DataPaths>('data_paths');
+  } catch {
+    return null;
+  }
+}
+
+/** 在系统文件管理器里打开数据目录 */
+export async function openDataDir(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<string>('open_data_dir');
+  } catch {
+    return null;
+  }
+}
+
+/** 已有备份文件名（新的在前） */
+export async function listBackups(): Promise<string[]> {
+  if (!isDesktop()) return [];
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<string[]>('list_backups');
+  } catch {
+    return [];
+  }
+}
+
+/** 用系统默认浏览器打开链接；桌面端走 Rust 命令，浏览器预览用 window.open */
+export async function openUrl(url: string): Promise<boolean> {
+  if (!url.startsWith('https://')) return false;
+  if (isDesktop()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('open_url', { url });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  } catch {
+    return false;
+  }
+}

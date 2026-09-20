@@ -131,3 +131,96 @@ pub async fn list_backups(app: AppHandle) -> Result<Vec<String>, String> {
 pub fn show_main_window(app: AppHandle) {
     crate::show_main_window(&app);
 }
+
+/// 数据位置信息，供设置面板展示
+#[derive(serde::Serialize)]
+pub struct DataPaths {
+    /// 实际存在的数据库文件路径（可能尚未创建）
+    pub database: String,
+    /// 备份目录
+    pub backups: String,
+    /// 应用数据目录
+    pub data_dir: String,
+}
+
+fn resolve_db_file(app: &AppHandle) -> Option<PathBuf> {
+    // sqlite 插件按 app_config_dir 解析相对路径；Windows 下与 app_data_dir 相同，
+    // 其它平台两者可能不同，所以两边都探一下，取真实存在的那份。
+    for dir in [app.path().app_config_dir().ok(), app.path().app_data_dir().ok()]
+        .into_iter()
+        .flatten()
+    {
+        let candidate = dir.join("memo.db");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn data_paths(app: AppHandle) -> Result<DataPaths, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("拿不到应用数据目录：{e}"))?;
+    let fallback = app
+        .path()
+        .app_config_dir()
+        .map(|dir| dir.join("memo.db"))
+        .unwrap_or_else(|_| data_dir.join("memo.db"));
+    let database = resolve_db_file(&app).unwrap_or(fallback);
+    Ok(DataPaths {
+        database: database.display().to_string(),
+        backups: data_dir.join("backups").display().to_string(),
+        data_dir: data_dir.display().to_string(),
+    })
+}
+
+/// 在系统文件管理器里打开数据目录
+#[tauri::command]
+pub async fn open_data_dir(app: AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("拿不到应用数据目录：{e}"))?;
+    let _ = fs::create_dir_all(&dir);
+
+    #[cfg(target_os = "windows")]
+    let spawned = std::process::Command::new("explorer").arg(&dir).spawn();
+
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(&dir).spawn();
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = std::process::Command::new("xdg-open").arg(&dir).spawn();
+
+    spawned.map_err(|e| format!("打开目录失败：{e}"))?;
+    Ok(dir.display().to_string())
+}
+
+/// 用系统默认浏览器打开一个 https 链接（用于「前往下载」更新）
+#[tauri::command]
+pub async fn open_url(url: String) -> Result<(), String> {
+    // 只放行 https，避免前端被注入任意命令或打开本地程序
+    if !url.starts_with("https://") {
+        return Err("只允许打开 https 链接".into());
+    }
+    if url.chars().any(|c| c.is_whitespace()) {
+        return Err("链接中不允许包含空白字符".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    let spawned = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(&url).spawn();
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = std::process::Command::new("xdg-open").arg(&url).spawn();
+
+    spawned.map_err(|e| format!("打开链接失败：{e}"))?;
+    Ok(())
+}
