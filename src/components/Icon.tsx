@@ -1,0 +1,125 @@
+import type { ReactNode } from 'react';
+
+export type IconName =
+  | 'brand'
+  | 'inbox'
+  | 'today'
+  | 'upcoming'
+  | 'done'
+  | 'plus'
+  | 'x'
+  | 'chev'
+  | 'more'
+  | 'cal'
+  | 'clock'
+  | 'flag'
+  | 'trash'
+  | 'check';
+
+interface IconDef {
+  node: ReactNode;
+  fill?: boolean;
+  sw?: number;
+}
+
+const DEFS: Record<IconName, IconDef> = {
+  brand: {
+    node: (
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9l1.2 2H19a1 1 0 0 1 1 1v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18Z" />
+    )
+  },
+  inbox: {
+    node: (
+      <>
+        <path d="M3.5 13h5l1 2h5l1-2h5" />
+        <path d="M5.2 5.5h13.6l1.7 7.5v4.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V13Z" />
+      </>
+    )
+  },
+  today: {
+    node: (
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+      </>
+    )
+  },
+  upcoming: {
+    node: (
+      <>
+        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+        <path d="M3.5 10h17M8 3.5v3M16 3.5v3" />
+      </>
+    )
+  },
+  done: {
+    node: (
+      <>
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M8.3 12.4l2.6 2.5 4.8-5" />
+      </>
+    )
+  },
+  plus: { node: <path d="M12 5v14M5 12h14" />, sw: 2 },
+  x: { node: <path d="M6 6l12 12M18 6L6 18" />, sw: 1.9 },
+  chev: { node: <path d="M6 9.5l6 6 6-6" />, sw: 2 },
+  more: {
+    node: (
+      <>
+        <circle cx="5.5" cy="12" r="1.5" />
+        <circle cx="12" cy="12" r="1.5" />
+        <circle cx="18.5" cy="12" r="1.5" />
+      </>
+    ),
+    fill: true
+  },
+  cal: {
+    node: (
+      <>
+        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+        <path d="M3.5 10h17M8 3.5v3M16 3.5v3" />
+      </>
+    ),
+    sw: 1.8
+  },
+  clock: {
+    node: (
+      <>
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.5V12l3 1.8" />
+      </>
+    ),
+    sw: 1.8
+  },
+  flag: { node: <path d="M6 21V4M6 5h11l-1.6 3.6L17 12H6" />, sw: 1.8 },
+  trash: { node: <path d="M4.5 7h15M9.5 7V5h5v2M7 7l1 12.5h8L17 7" />, sw: 1.8 },
+  check: { node: <path d="M5 12.6l4.6 4.4L19 6.5" />, sw: 3.2 }
+};
+
+export function Icon({
+  name,
+  size = 16,
+  className
+}: {
+  name: IconName;
+  size?: number;
+  className?: string;
+}) {
+  const def = DEFS[name];
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      fill={def.fill ? 'currentColor' : 'none'}
+      stroke={def.fill ? 'none' : 'currentColor'}
+      strokeWidth={def.sw ?? 1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {def.node}
+    </svg>
+  );
+}

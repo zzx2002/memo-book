@@ -1,0 +1,385 @@
+/* =========================================================
+   我的记事簿 · 全局样式（Tailwind 层 + 少量结构化组件类）
+   ========================================================= */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg font-sans text-ink antialiased;
+    margin: 0;
+  }
+
+  ::selection {
+    background: #d7e0ff;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #d9dbe2;
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 10px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #c3c6d0;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  input,
+  textarea,
+  select {
+    outline: none;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* ---------- 窗口 ---------- */
+  .lights {
+    @apply flex gap-2;
+  }
+  .lights i {
+    @apply block h-3 w-3 rounded-full;
+  }
+  .lights i:nth-child(1) {
+    background: #ff5f57;
+  }
+  .lights i:nth-child(2) {
+    background: #febc2e;
+  }
+  .lights i:nth-child(3) {
+    background: #28c840;
+  }
+
+  /* ---------- 左侧导航 ---------- */
+  .nav-item {
+    @apply flex h-[38px] items-center gap-2.5 rounded-[10px] px-2.5 text-left text-[14px] text-ink-soft transition-colors;
+  }
+  .nav-item .ic {
+    @apply grid flex-none place-items-center text-ink-mute;
+  }
+  .nav-item .label {
+    @apply flex-1 truncate;
+  }
+  .nav-item .count {
+    @apply text-[12.5px] tabular-nums text-ink-mute;
+  }
+  .nav-item:hover {
+    @apply bg-[#eef0f4] text-ink;
+  }
+  .nav-item.active {
+    @apply bg-accent-bg font-semibold text-accent-ink;
+  }
+  .nav-item.active .ic,
+  .nav-item.active .count {
+    @apply text-accent-ink;
+  }
+  .nav-item.active .count {
+    @apply opacity-80;
+  }
+
+  .folder-item {
+    @apply flex h-[34px] items-center gap-2.5 rounded-[9px] px-2.5 text-left text-[13.5px] text-ink-soft;
+  }
+  .folder-item .label {
+    @apply flex-1 truncate;
+  }
+  .folder-item .count {
+    @apply text-[12.5px] tabular-nums text-ink-mute;
+  }
+  .folder-item .del {
+    @apply hidden h-5 w-5 place-items-center rounded-md text-ink-mute;
+  }
+  .folder-item:hover {
+    @apply bg-[#eef0f4] text-ink;
+  }
+  .folder-item:hover .del {
+    @apply grid;
+  }
+  .folder-item .del:hover {
+    @apply bg-[#e2e4ea] text-hi;
+  }
+  .folder-item.active {
+    @apply bg-pane font-semibold text-ink shadow-card;
+  }
+  .folder-item.active .count {
+    @apply text-accent-ink;
+  }
+
+  .side-head {
+    @apply flex items-center justify-between px-2.5 pb-1.5 text-[12px] tracking-wide text-ink-mute;
+  }
+  .side-head button {
+    @apply grid h-[22px] w-[22px] place-items-center rounded-md text-ink-mute;
+  }
+  .side-head button:hover {
+    @apply bg-[#e7e9ee] text-ink-soft;
+  }
+
+  .btn-add {
+    @apply flex h-[42px] w-full items-center justify-center gap-2 rounded-[11px] bg-accent-bg font-semibold text-accent-ink transition-colors;
+  }
+  .btn-add:hover {
+    @apply bg-accent-soft;
+  }
+
+  .swatch {
+    @apply flex-none rounded-[3px];
+  }
+
+  /* ---------- 列表 ---------- */
+  .ghost-btn {
+    @apply flex h-[30px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] text-ink-soft;
+  }
+  .ghost-btn:hover {
+    @apply bg-line-soft text-ink;
+  }
+  .icon-btn {
+    @apply grid h-[30px] w-[30px] place-items-center rounded-lg text-ink-soft;
+  }
+  .icon-btn:hover {
+    @apply bg-line-soft text-ink;
+  }
+
+  .add-box {
+    @apply flex h-11 items-center gap-2 rounded-[11px] border border-[#e6e8ee] bg-pane pl-2.5 pr-2 transition;
+  }
+  .add-box:focus-within {
+    @apply border-[#c9d3fb] ring-[3px] ring-[#eef1fe];
+  }
+  .add-box .plus {
+    @apply grid h-[26px] w-[26px] flex-none place-items-center rounded-lg text-accent;
+  }
+  .add-box .plus:hover {
+    @apply bg-accent-bg;
+  }
+  .add-box input {
+    @apply h-full flex-1 border-none bg-transparent;
+  }
+  .add-box input::placeholder {
+    @apply text-[#b4b9c3];
+  }
+
+  .task-row {
+    @apply flex min-h-[46px] items-center gap-2.5 rounded-[10px] border border-transparent px-3 py-2;
+  }
+  .task-row:hover {
+    @apply bg-[#f8f9fb];
+  }
+  .task-row.active {
+    @apply border-[#e2e8ff] bg-[#f2f5ff];
+  }
+  .task-row .title {
+    @apply min-w-0 flex-1 truncate text-[14px];
+  }
+  .task-row .tag {
+    @apply flex max-w-[92px] flex-none items-center gap-1.5 text-[12.5px] text-ink-soft;
+  }
+  .task-row .due {
+    @apply w-[74px] flex-none text-right text-[12.5px] tabular-nums text-ink-soft;
+  }
+  .task-row .due.overdue {
+    @apply font-semibold text-hi;
+  }
+  .task-row .due.today {
+    @apply font-semibold text-accent-ink;
+  }
+  .task-row.done {
+    @apply opacity-60;
+  }
+  .task-row.done .title {
+    @apply text-ink-mute line-through;
+  }
+  .task-row.done .tag,
+  .task-row.done .due {
+    @apply font-normal text-ink-mute;
+  }
+
+  .check {
+    @apply grid h-[17px] w-[17px] flex-none place-items-center rounded-full border-[1.6px] border-[#cfd3db] text-white transition;
+  }
+  .check svg {
+    @apply opacity-0;
+  }
+  .check:hover {
+    @apply border-accent;
+  }
+  .check.checked {
+    @apply border-good bg-good;
+  }
+  .check.checked svg {
+    @apply opacity-100;
+  }
+  .check.square {
+    @apply rounded-[5px] border-good bg-good;
+  }
+  .check.square svg {
+    @apply opacity-100;
+  }
+
+  .group-head {
+    @apply flex cursor-pointer select-none items-center gap-2 px-3 pb-2 pt-4 text-[12.5px] text-ink-mute;
+  }
+  .group-head .chev {
+    @apply grid place-items-center transition-transform;
+  }
+  .group-head.collapsed .chev {
+    @apply -rotate-90;
+  }
+
+  /* ---------- 详情 ---------- */
+  .detail-title {
+    @apply w-full border-none bg-transparent py-1.5 pb-2.5 text-[23px] font-bold leading-snug tracking-[.2px];
+  }
+  .detail-title::placeholder {
+    @apply text-[#c8ccd4];
+  }
+
+  .chip {
+    @apply flex h-[27px] items-center gap-1.5 rounded-lg bg-side px-2.5 text-[12.5px] text-ink-soft;
+  }
+  .chip.plain {
+    @apply bg-transparent px-0.5;
+  }
+  .chip .cal {
+    @apply grid place-items-center text-hi;
+  }
+  .chip .clock {
+    @apply grid place-items-center text-ink-soft;
+  }
+  .chip-col {
+    @apply flex flex-col leading-tight;
+  }
+  .chip-col .k {
+    @apply text-[11px] text-ink-mute;
+  }
+  .chip-col .v {
+    @apply text-[12.5px] text-ink-soft;
+  }
+
+  .desc-box {
+    @apply w-full resize-y rounded-[10px] border border-line bg-[#fcfcfd] px-3.5 pb-6 pt-3 text-[13.5px] leading-relaxed;
+  }
+  .desc-box:focus {
+    @apply border-[#d9e0fb] bg-pane ring-[3px] ring-[#f0f3fe];
+  }
+
+  .field-row {
+    @apply grid grid-cols-[78px_1fr] items-center gap-2.5 border-t border-line-soft py-2.5;
+  }
+  .field-row > .k {
+    @apply text-[13px] text-ink-mute;
+  }
+
+  .seg-btn {
+    @apply flex h-[38px] flex-1 items-center justify-center gap-[7px] rounded-[9px] border border-line bg-pane text-[13px] text-ink-soft transition;
+  }
+  .seg-btn:hover {
+    @apply border-[#dcdfe7];
+  }
+  .seg-btn.on {
+    @apply font-semibold;
+  }
+  .seg-btn.on[data-p='high'] {
+    @apply border-[#f6c9c5] bg-[#fdf1f0] text-hi;
+  }
+  .seg-btn.on[data-p='medium'] {
+    @apply border-[#f6dfae] bg-[#fdf7ec] text-[#c47c05];
+  }
+  .seg-btn.on[data-p='low'] {
+    @apply border-[#cadcfb] bg-[#f1f6fe] text-lo;
+  }
+
+  .pick {
+    @apply relative flex-1;
+  }
+  .pick .box {
+    @apply flex h-[38px] w-full items-center gap-2.5 rounded-[9px] border border-line bg-pane px-3 text-left text-[13.5px];
+  }
+  .pick .box:hover {
+    @apply border-[#dcdfe7];
+  }
+  .pick select {
+    @apply absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0;
+  }
+
+  .date-field {
+    @apply relative flex h-[38px] flex-1 items-center gap-2.5 rounded-[9px] border border-line bg-pane px-3 pr-10 text-[13.5px] text-ink-soft;
+  }
+  .date-field:hover {
+    @apply border-[#dcdfe7];
+  }
+  .date-field .txt {
+    @apply flex-1 truncate;
+  }
+  .date-field .txt.ph {
+    @apply text-[#b4b9c3];
+  }
+  .date-field input[type='date'],
+  .date-field input[type='datetime-local'] {
+    @apply absolute inset-0 h-full w-full cursor-pointer border-none bg-transparent p-0 opacity-0;
+  }
+  .date-field .clear {
+    @apply absolute right-2 top-1/2 z-[2] hidden h-[22px] w-[22px] -translate-y-1/2 place-items-center rounded-[7px] text-ink-mute;
+  }
+  .date-field:hover .clear {
+    @apply grid;
+  }
+  .date-field .clear:hover {
+    @apply bg-[#f1f2f5] text-hi;
+  }
+
+  .danger-btn {
+    @apply flex h-[34px] items-center gap-[7px] rounded-[9px] px-3 text-[13px] text-hi;
+  }
+  .danger-btn:hover {
+    @apply bg-[#fdf1f0];
+  }
+
+  /* ---------- 弹出菜单 / 提示 ---------- */
+  .menu-item {
+    @apply flex h-[34px] w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] text-ink-soft;
+  }
+  .menu-item:hover {
+    @apply bg-[#f5f6f9] text-ink;
+  }
+  .menu-item.on {
+    @apply font-semibold text-accent-ink;
+  }
+  .menu-item.danger-ink {
+    @apply text-hi;
+  }
+  .menu-item.danger-ink:hover {
+    @apply bg-[#fdf1f0];
+  }
+
+  .empty-state {
+    @apply px-5 py-12 text-center text-[13px] text-ink-mute;
+  }
+  .empty-state .big {
+    @apply mb-1 text-[15px] text-ink-soft;
+  }
+}

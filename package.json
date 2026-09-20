@@ -1,0 +1,44 @@
+{
+  "name": "memo-book",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "轻量化桌面待办记事簿 · Tauri 2 + React + TypeScript + SQLite + Tailwind",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check:sql": "node --no-warnings scripts/check-sql.mjs",
+    "check:config": "node --no-warnings scripts/check-config.mjs",
+    "check:ui": "vite build --ssr scripts/smoke-ui.tsx --outDir .smoke --emptyOutDir --logLevel warn && node --no-warnings .smoke/smoke-ui.js",
+    "check": "pnpm typecheck && pnpm check:config && pnpm check:sql && pnpm check:ui",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "icons": "node scripts/gen-icons.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-sql": "^2.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^30.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
