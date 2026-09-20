@@ -29,16 +29,32 @@ console.log('已完成    :', one('SELECT COUNT(*) FROM tasks WHERE done = 1'));
 console.log('优先级分布:', JSON.stringify(db.prepare('SELECT priority, COUNT(*) AS n FROM tasks GROUP BY priority').all()));
 console.log('重复规则  :', JSON.stringify(db.prepare('SELECT repeat_rule, COUNT(*) AS n FROM tasks GROUP BY repeat_rule').all()));
 console.log('sort_order:', JSON.stringify(db.prepare('SELECT MIN(sort_order) AS min, MAX(sort_order) AS max FROM tasks').get()));
+console.log('回收站    :', one('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL'), '条');
+console.log('已提醒    :', one('SELECT COUNT(*) FROM tasks WHERE notified_at IS NOT NULL'), '条');
 console.log('首条说明长度:', one('SELECT LENGTH(note) FROM tasks WHERE title = \'完成项目方案初稿\''));
+
+const columns = db
+  .prepare('SELECT name FROM pragma_table_info(\'tasks\')')
+  .all()
+  .map((r) => r.name);
+const required = ['notified_at', 'deleted_at', 'sort_order', 'repeat_rule'];
+const missing = required.filter((c) => !columns.includes(c));
+if (missing.length) {
+  console.error('✘ tasks 表缺少列:', missing.join(', '));
+  process.exit(1);
+}
+console.log('列齐全    :', required.join(' '));
 
 const indexes = db
   .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%' ORDER BY name")
   .all()
   .map((r) => r.name);
 console.log('索引      :', indexes.join(' '));
-if (!indexes.includes('idx_tasks_sort')) {
-  console.error('✘ 缺少 idx_tasks_sort（v0.2 手动排序索引）');
-  process.exit(1);
+for (const need of ['idx_tasks_sort', 'idx_tasks_deleted']) {
+  if (!indexes.includes(need)) {
+    console.error(`✘ 缺少索引 ${need}`);
+    process.exit(1);
+  }
 }
 
 const folders = db.prepare('SELECT id, name, color FROM folders ORDER BY sort_order').all();
@@ -66,6 +82,36 @@ if (firstAfter !== moved[0]) {
   process.exit(1);
 }
 console.log('拖拽排序回写演练: OK');
+
+// 演练软删除 / 恢复 / 彻底删除（v0.3 回收站链路）
+const softTarget = one('SELECT id FROM tasks WHERE deleted_at IS NULL ORDER BY id LIMIT 1');
+const visibleBefore = one('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL');
+db.prepare("UPDATE tasks SET deleted_at = datetime('now') WHERE id = ?").run(softTarget);
+const visibleAfter = one('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL');
+const trashed = one('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL');
+if (visibleAfter !== visibleBefore - 1 || trashed !== 1) {
+  console.error('✘ 软删除后可见/回收站条数不正确', { visibleBefore, visibleAfter, trashed });
+  process.exit(1);
+}
+db.prepare('UPDATE tasks SET deleted_at = NULL WHERE id = ?').run(softTarget);
+if (one('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL') !== 0) {
+  console.error('✘ 恢复失败');
+  process.exit(1);
+}
+db.prepare("UPDATE tasks SET deleted_at = datetime('now') WHERE id = ?").run(softTarget);
+db.prepare('DELETE FROM tasks WHERE deleted_at IS NOT NULL').run();
+console.log('软删除/恢复/清空回收站演练: OK');
+
+// 演练提醒标记（用一条仍然存在的任务）
+const notifyTarget = one('SELECT id FROM tasks ORDER BY id LIMIT 1');
+db.prepare("UPDATE tasks SET notified_at = datetime('now') WHERE id = ?").run(notifyTarget);
+const notifiedAt = one(`SELECT notified_at FROM tasks WHERE id = ${notifyTarget}`);
+db.prepare('UPDATE tasks SET notified_at = NULL WHERE id = ?').run(notifyTarget);
+if (!notifiedAt) {
+  console.error('✘ notified_at 写入失败');
+  process.exit(1);
+}
+console.log('提醒标记演练: OK');
 
 console.log('外键级联后未分类任务数:', one('SELECT COUNT(*) FROM tasks WHERE folder_id IS NULL'));
 

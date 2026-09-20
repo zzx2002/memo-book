@@ -12,32 +12,35 @@ export default function App() {
 }
 
 function Shell() {
-  const { toast, storage, error } = useApp();
+  const { toast, error } = useApp();
 
   return (
-    <div className="grid h-screen min-w-[1040px] grid-rows-[44px_1fr] overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-line bg-side px-4">
-        <div className="text-[12.5px] tracking-wide text-ink-mute">我的记事簿</div>
-        <div className="ml-auto text-[11.5px] text-ink-faint">
-          {storage === 'sqlite' ? '本地 SQLite 存储' : '浏览器预览模式（数据存在 localStorage）'}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-[240px_1fr_452px] overflow-hidden">
+    <div className="flex h-screen min-w-[1040px] flex-col overflow-hidden">
+      {/* 三栏：每列都要 min-h-0，否则列会被内容撑高、内部滚动条失效 */}
+      <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_452px] overflow-hidden">
         <Sidebar />
         <TaskList />
         <DetailPanel />
       </div>
 
       {error ? (
-        <div className="fixed left-1/2 top-[64px] max-w-[560px] -translate-x-1/2 rounded-xl border border-[#f6c9c5] bg-[#fdf1f0] px-4 py-3 text-[12.5px] text-hi shadow-pop">
+        <div className="fixed left-1/2 top-4 max-w-[560px] -translate-x-1/2 rounded-xl border border-[#f6c9c5] bg-[#fdf1f0] px-4 py-3 text-[12.5px] text-hi shadow-pop">
           数据库连接失败：{error}
         </div>
       ) : null}
 
       {toast ? (
-        <div className="pointer-events-none fixed bottom-7 left-1/2 -translate-x-1/2 rounded-[10px] bg-[#2b3040] px-4 py-2.5 text-[13px] text-white shadow-pop">
-          {toast}
+        <div className="fixed bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-[10px] bg-[#2b3040] px-4 py-2.5 text-[13px] text-white shadow-pop">
+          <span>{toast.text}</span>
+          {toast.undo ? (
+            <button
+              type="button"
+              className="rounded-md bg-white/15 px-2 py-0.5 text-[12.5px] font-semibold text-white hover:bg-white/25"
+              onClick={toast.undo}
+            >
+              撤销
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

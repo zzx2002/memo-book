@@ -57,7 +57,9 @@ export function buildNextOccurrence(task: Task): Omit<Task, 'id' | 'createdAt' |
     dueDate,
     remindAt: next && task.remindAt ? `${next}T${task.remindAt.slice(11, 16)}` : task.remindAt,
     repeat: task.repeat,
-    sortOrder: Number.MAX_SAFE_INTEGER
+    sortOrder: Number.MAX_SAFE_INTEGER,
+    notifiedAt: null,
+    deletedAt: null
   };
 }
 

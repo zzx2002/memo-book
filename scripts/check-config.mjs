@@ -32,9 +32,42 @@ for (const icon of conf.bundle.icon) {
 const caps = JSON.parse(readFileSync('src-tauri/capabilities/default.json', 'utf8'));
 if (caps.permissions.includes('sql:allow-execute')) ok('已声明 sql:allow-execute（写操作必需）');
 else no('缺少 sql:allow-execute，db.execute 会被拒绝');
+if (caps.permissions.includes('notification:default')) ok('已声明 notification:default（到点提醒必需）');
+else no('缺少 notification:default，sendNotification 会被拒绝');
 
-const ico = readFileSync('src-tauri/icons/icon.ico');
-const isPng = ico.subarray(22, 26).toString('hex') === '89504e47';
+// Rust 侧依赖与插件注册要和前端调用对得上
+const cargo = readFileSync('src-tauri/Cargo.toml', 'utf8');
+if (cargo.includes('tauri-plugin-notification')) ok('Cargo.toml 已引入 tauri-plugin-notification');
+else no('Cargo.toml 缺少 tauri-plugin-notification');
+const libRs = readFileSync('src-tauri/src/lib.rs', 'utf8');
+if (libRs.includes('tauri_plugin_notification::init()')) ok('lib.rs 已注册通知插件');
+else no('lib.rs 未注册通知插件');
+for (const n of ['1', '2', '3']) {
+  if (libRs.includes(`version: ${n},`)) ok(`lib.rs 已注册迁移 v${n}`);
+  else no(`lib.rs 缺少迁移 v${n}`);
+}
+const JS_PLUGINS = ['@tauri-apps/plugin-sql', '@tauri-apps/plugin-notification'];
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+for (const dep of JS_PLUGINS) {
+  if (pkg.dependencies?.[dep]) ok(`前端依赖存在: ${dep}`);
+  else no(`前端缺少依赖: ${dep}`);
+}
+
+// 布局不变量：三栏都必须带 min-h-0
+// flex/grid 子项默认 min-height:auto，内容一高整列会被撑过窗口高度，
+// 内部的 overflow-y-auto 就拿不到有界高度 → 滚动条失效、下方内容被裁掉。
+const columns = [
+  ['src/App.tsx', 'grid min-h-0'],
+  ['src/components/Sidebar.tsx', 'flex min-h-0'],
+  ['src/components/TaskList.tsx', 'flex min-h-0'],
+  ['src/components/DetailPanel.tsx', 'flex min-h-0']
+];
+for (const [file, needle] of columns) {
+  if (readFileSync(file, 'utf8').includes(needle)) ok(`内部滚动不变量: ${file}`);
+  else no(`${file} 缺少 "${needle}"，该列的内部滚动会失效`);
+}
+
+const ico = readFileSync('src-tauri/icons/icon.ico');const isPng = ico.subarray(22, 26).toString('hex') === '89504e47';
 if (ico.readUInt16LE(2) === 1 && ico.readUInt16LE(4) === 1 && isPng) ok('icon.ico 结构正确（内嵌 256x256 PNG）');
 else no('icon.ico 结构异常');
 

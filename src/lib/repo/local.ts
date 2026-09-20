@@ -13,6 +13,28 @@ interface LocalState {
   seq: number;
 }
 
+/** 兼容旧版本落盘的数据：补齐后加的字段 */
+function normalizeTask(t: Partial<Task> & { id: number; title: string }): Task {
+  return {
+    id: t.id,
+    title: t.title,
+    note: t.note ?? '',
+    remark: t.remark ?? '',
+    done: !!t.done,
+    priority: t.priority ?? 'low',
+    folderId: t.folderId ?? null,
+    startDate: t.startDate ?? null,
+    dueDate: t.dueDate ?? null,
+    remindAt: t.remindAt ?? null,
+    repeat: t.repeat ?? 'none',
+    sortOrder: t.sortOrder ?? 0,
+    notifiedAt: t.notifiedAt ?? null,
+    deletedAt: t.deletedAt ?? null,
+    createdAt: t.createdAt ?? new Date().toISOString(),
+    completedAt: t.completedAt ?? null
+  };
+}
+
 function seedState(): LocalState {
   const folders: Folder[] = SEED_FOLDERS.map((f, i) => ({
     id: i + 1,
@@ -38,6 +60,8 @@ function seedState(): LocalState {
       remindAt: t.remindTime && t.dueOffset != null ? `${shiftISO(t.dueOffset)}T${t.remindTime}` : null,
       repeat: t.repeat ?? 'none',
       sortOrder: seq,
+      notifiedAt: null,
+      deletedAt: null,
       createdAt: new Date(now + seq * 1000).toISOString(),
       completedAt: t.done && t.doneOffset != null ? new Date(now + t.doneOffset * 864e5).toISOString() : null
     };
@@ -54,7 +78,11 @@ function load(): LocalState {
     if (raw) {
       const parsed = JSON.parse(raw) as LocalState;
       if (parsed && Array.isArray(parsed.tasks) && Array.isArray(parsed.folders)) {
-        state = { folders: parsed.folders, tasks: parsed.tasks, seq: parsed.seq ?? parsed.tasks.length + 100 };
+        state = {
+          folders: parsed.folders,
+          tasks: parsed.tasks.map(normalizeTask),
+          seq: parsed.seq ?? parsed.tasks.length + 100
+        };
         return state;
       }
     }
@@ -76,6 +104,7 @@ function persist() {
 }
 
 const nextId = (s: LocalState) => (s.seq += 1);
+const nowIso = () => new Date().toISOString();
 
 export const localRepo: Repo = {
   kind: 'local',
@@ -105,7 +134,13 @@ export const localRepo: Repo = {
   },
 
   async listTasks() {
-    return [...load().tasks];
+    return load().tasks.filter((t) => !t.deletedAt);
+  },
+
+  async listTrash() {
+    return load()
+      .tasks.filter((t) => !!t.deletedAt)
+      .sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)) || b.id - a.id);
   },
 
   async createTask(input: NewTask) {
@@ -123,7 +158,9 @@ export const localRepo: Repo = {
       remindAt: input.remindAt ?? null,
       repeat: input.repeat ?? 'none',
       sortOrder: s.tasks.reduce((max, t) => Math.max(max, t.sortOrder), -1) + 1,
-      createdAt: new Date().toISOString(),
+      notifiedAt: input.notifiedAt ?? null,
+      deletedAt: input.deletedAt ?? null,
+      createdAt: nowIso(),
       completedAt: input.completedAt ?? null
     };
     s.tasks.push(task);
@@ -139,7 +176,25 @@ export const localRepo: Repo = {
 
   async deleteTask(id) {
     const s = load();
+    s.tasks = s.tasks.map((t) => (t.id === id ? { ...t, deletedAt: nowIso() } : t));
+    persist();
+  },
+
+  async restoreTask(id) {
+    const s = load();
+    s.tasks = s.tasks.map((t) => (t.id === id ? { ...t, deletedAt: null } : t));
+    persist();
+  },
+
+  async purgeTask(id) {
+    const s = load();
     s.tasks = s.tasks.filter((t) => t.id !== id);
+    persist();
+  },
+
+  async clearTrash() {
+    const s = load();
+    s.tasks = s.tasks.filter((t) => !t.deletedAt);
     persist();
   },
 
@@ -152,7 +207,8 @@ export const localRepo: Repo = {
 
   async clearCompleted() {
     const s = load();
-    s.tasks = s.tasks.filter((t) => !t.done);
+    const stamp = nowIso();
+    s.tasks = s.tasks.map((t) => (t.done && !t.deletedAt ? { ...t, deletedAt: stamp } : t));
     persist();
   },
 

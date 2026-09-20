@@ -256,7 +256,130 @@ expect(
   `显示：${dueField?.querySelector('.txt')?.textContent}`
 );
 
-/* ---------- 7. 持久化 ---------- */
+/* ---------- 7. 软删除 / 回收站 / 撤销（v0.3） ---------- */
+const beforeDelete = activeRows().length;
+const victimTitle = titles(activeRows())[0];
+await click(activeRows()[0]);
+await click(byText<HTMLElement>('.danger-btn', '删除待办'));
+expect(activeRows().length === beforeDelete - 1, '删除后立即从列表移除', `剩余 ${activeRows().length}`);
+expect(!titles(activeRows()).includes(victimTitle), '被删的待办不再出现在收件箱', '仍能看到被删的待办');
+
+const undoBtn = byText<HTMLElement>('button', '撤销');
+expect(!!undoBtn, '提示条带「撤销」按钮', '没有出现撤销按钮');
+await click(undoBtn);
+expect(titles(activeRows()).includes(victimTitle), '撤销后原样恢复', `恢复后：${JSON.stringify(titles(activeRows()).slice(0, 3))}`);
+
+// 再删一次并进入回收站，验证恢复链路
+await click(activeRows()[0]);
+await click(byText<HTMLElement>('.danger-btn', '删除待办'));
+await click(byText<HTMLElement>('.nav-item', '回收站'));
+const trashRows = all<HTMLElement>('.task-row');
+expect(trashRows.length === 1, '回收站里有 1 条待办', `回收站实际 ${trashRows.length} 条`);
+expect(trashRows[0].textContent?.includes(victimTitle) === true, '回收站里就是刚删的那条', '内容不匹配');
+expect(!!byText<HTMLElement>('.nav-item', '回收站')?.querySelector('.count'), '侧栏回收站有计数', '缺少计数');
+
+await click(byText<HTMLElement>('.ghost-btn', '恢复'));
+expect(all<HTMLElement>('.task-row').length === 0, '恢复后回收站清空', '回收站仍有内容');
+await click(byText<HTMLElement>('.nav-item', '收件箱'));
+expect(titles(activeRows()).includes(victimTitle), '恢复的待办回到收件箱', '收件箱里找不到恢复的待办');
+
+const storedTrash = JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
+expect(
+  storedTrash.tasks?.every((t: { deletedAt: string | null }) => !t.deletedAt),
+  '恢复后存储里没有残留的软删除标记',
+  '仍有 deletedAt 残留'
+);
+
+/* ---------- 8. 双击内联重命名（v0.3） ---------- */
+const renameTarget = activeRows()[0];
+const oldTitle = titles([renameTarget])[0];
+await act(async () => {
+  renameTarget.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+});
+await flush();
+const editInput = document.querySelector('.task-row input') as HTMLInputElement;
+expect(!!editInput, '双击进入内联编辑', '没有出现编辑输入框');
+await setInput(editInput, '重命名后的标题');
+await act(async () => {
+  editInput.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+});
+await flush();
+expect(
+  titles(activeRows()).includes('重命名后的标题') && !titles(activeRows()).includes(oldTitle),
+  '回车提交新标题',
+  `列表：${JSON.stringify(titles(activeRows()).slice(0, 3))}`
+);
+
+/* ---------- 9. 键盘导航（v0.3） ---------- */
+await act(async () => {
+  window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+});
+await flush();
+const firstSelected = activeRows().findIndex((r) => r.classList.contains('active'));
+expect(firstSelected === 0, '↓ 键选中第一条', `选中索引 ${firstSelected}`);
+await act(async () => {
+  window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+});
+await flush();
+const secondSelected = activeRows().findIndex((r) => r.classList.contains('active'));
+expect(secondSelected === 1, '再按 ↓ 移到第二条', `选中索引 ${secondSelected}`);
+await act(async () => {
+  window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+});
+await flush();
+expect(activeRows().findIndex((r) => r.classList.contains('active')) === 0, '↑ 键回到第一条', '↑ 未生效');
+
+/* ---------- 10. 提醒调度（纯函数） ---------- */
+const { splitDueReminders } = await import('../src/lib/reminder');
+const fakeTask = (
+  id: number,
+  remindAt: string | null,
+  over: Partial<import('../src/types').Task> = {}
+): import('../src/types').Task => ({
+  id,
+  title: `提醒 ${id}`,
+  note: '',
+  remark: '',
+  done: false,
+  priority: 'low',
+  folderId: null,
+  startDate: null,
+  dueDate: null,
+  remindAt,
+  repeat: 'none',
+  sortOrder: id,
+  notifiedAt: null,
+  deletedAt: null,
+  createdAt: '2026-09-01 10:00:00',
+  completedAt: null,
+  ...over
+});
+
+const now = new Date(2026, 8, 20, 10, 0, 0); // 2026-09-20 10:00 本地
+const split = splitDueReminders(
+  [
+    fakeTask(1, '2026-09-20T09:30'), // 已到点半小时 -> 立刻提醒
+    fakeTask(2, '2026-09-20T11:00'), // 还没到 -> 不提醒
+    fakeTask(3, '2026-09-17T09:00'), // 过期 3 天 -> 只标记不打扰
+    fakeTask(4, '2026-09-20T09:00', { notifiedAt: '2026-09-20T09:00' }), // 已提醒过 -> 跳过
+    fakeTask(5, '2026-09-20T09:00', { done: true }), // 已完成 -> 跳过
+    fakeTask(6, '2026-09-20T09:00', { deletedAt: '2026-09-20T09:10' }), // 已删除 -> 跳过
+    fakeTask(7, null) // 没设提醒 -> 跳过
+  ],
+  now
+);
+expect(
+  split.fire.length === 1 && split.fire[0].id === 1,
+  '到点的提醒被挑出（其余全部跳过）',
+  `fire=${JSON.stringify(split.fire.map((t) => t.id))}`
+);
+expect(
+  split.stale.length === 1 && split.stale[0].id === 3,
+  '过期太久的提醒只做标记不再打扰',
+  `stale=${JSON.stringify(split.stale.map((t) => t.id))}`
+);
+
+/* ---------- 11. 持久化 ---------- */
 const stored = JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
 expect(
   !!stored.tasks?.some((t: { title: string }) => t.title === '冒烟测试：写一条新待办'),

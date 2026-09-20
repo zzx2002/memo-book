@@ -44,6 +44,8 @@ function rowToTask(r: Row): Task {
     remindAt: normalizeDateTime(r.remind_at as string | null),
     repeat: (r.repeat_rule as Task['repeat']) ?? 'none',
     sortOrder: Number(r.sort_order ?? 0),
+    notifiedAt: normalizeDateTime(r.notified_at as string | null),
+    deletedAt: normalizeDateTime(r.deleted_at as string | null),
     createdAt: String(r.created_at ?? ''),
     completedAt: normalizeDateTime(r.completed_at as string | null)
   };
@@ -61,6 +63,8 @@ const COLUMN: Record<keyof TaskPatch, string> = {
   remindAt: 'remind_at',
   repeat: 'repeat_rule',
   sortOrder: 'sort_order',
+  notifiedAt: 'notified_at',
+  deletedAt: 'deleted_at',
   completedAt: 'completed_at'
 };
 
@@ -125,7 +129,17 @@ export const sqliteRepo: Repo = {
 
   async listTasks() {
     const db = await getDb();
-    const rows = await db.select<Row[]>('SELECT * FROM tasks ORDER BY created_at, id');
+    const rows = await db.select<Row[]>(
+      'SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY created_at, id'
+    );
+    return rows.map(rowToTask);
+  },
+
+  async listTrash() {
+    const db = await getDb();
+    const rows = await db.select<Row[]>(
+      'SELECT * FROM tasks WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC'
+    );
     return rows.map(rowToTask);
   },
 
@@ -143,7 +157,22 @@ export const sqliteRepo: Repo = {
 
   async deleteTask(id) {
     const db = await getDb();
+    await db.execute("UPDATE tasks SET deleted_at = datetime('now') WHERE id = $1", [id]);
+  },
+
+  async restoreTask(id) {
+    const db = await getDb();
+    await db.execute('UPDATE tasks SET deleted_at = NULL WHERE id = $1', [id]);
+  },
+
+  async purgeTask(id) {
+    const db = await getDb();
     await db.execute('DELETE FROM tasks WHERE id = $1', [id]);
+  },
+
+  async clearTrash() {
+    const db = await getDb();
+    await db.execute('DELETE FROM tasks WHERE deleted_at IS NOT NULL');
   },
 
   async reorderTasks(orderedIds) {
@@ -155,7 +184,9 @@ export const sqliteRepo: Repo = {
 
   async clearCompleted() {
     const db = await getDb();
-    await db.execute('DELETE FROM tasks WHERE done = 1');
+    await db.execute(
+      "UPDATE tasks SET deleted_at = datetime('now') WHERE done = 1 AND deleted_at IS NULL"
+    );
   },
 
   async loadDemoData() {

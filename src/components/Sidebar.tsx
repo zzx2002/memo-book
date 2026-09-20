@@ -8,7 +8,8 @@ const VIEW_ICON: Record<string, IconName> = {
   inbox: 'inbox',
   today: 'today',
   upcoming: 'upcoming',
-  done: 'done'
+  done: 'done',
+  trash: 'trash'
 };
 
 export function Sidebar() {
@@ -20,7 +21,8 @@ export function Sidebar() {
     addFolder,
     removeFolder,
     nextFolderColor,
-    focusAddInput
+    focusAddInput,
+    storage
   } = useApp();
 
   const [adding, setAdding] = useState(false);
@@ -39,7 +41,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex flex-col overflow-hidden border-r border-line bg-side px-3.5 pb-3.5 pt-[18px]">
+    <aside className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-side px-3.5 pb-3.5 pt-[18px]">
       <div className="flex items-center gap-2.5 px-1.5 pb-4">
         <div className="grid h-[34px] w-[34px] flex-none place-items-center rounded-[10px] bg-[#2b3040] text-white">
           <Icon name="brand" size={18} />
@@ -76,7 +78,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="flex flex-col gap-0.5 overflow-y-auto">
+      <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
         {folders.map((folder) => {
           const on = view.type === 'folder' && view.id === folder.id;
           return (
@@ -131,6 +133,9 @@ export function Sidebar() {
           <Icon name="plus" size={15} />
           新增待办
         </button>
+        <div className="pt-2 text-center text-[11px] leading-tight text-ink-faint">
+          {storage === 'sqlite' ? '本地 SQLite 存储' : '浏览器预览模式 · localStorage'}
+        </div>
       </div>
     </aside>
   );

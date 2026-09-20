@@ -30,10 +30,11 @@ export const SMART_VIEWS: Record<SmartViewId, { label: string; sub: string }> = 
   inbox: { label: '收件箱', sub: '记录一切，整理成行动' },
   today: { label: '今天', sub: '今天要完成的事' },
   upcoming: { label: '即将到来', sub: '已经排好期的待办' },
-  done: { label: '已完成', sub: '已经收尾的记录' }
+  done: { label: '已完成', sub: '已经收尾的记录' },
+  trash: { label: '回收站', sub: '删除的待办会先放这里，可随时恢复' }
 };
 
-export const SMART_ORDER: SmartViewId[] = ['inbox', 'today', 'upcoming', 'done'];
+export const SMART_ORDER: SmartViewId[] = ['inbox', 'today', 'upcoming', 'done', 'trash'];
 
 export const SORTS: Record<SortKey, string> = {
   created: '按创建时间',

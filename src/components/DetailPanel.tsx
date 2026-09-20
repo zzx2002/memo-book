@@ -11,7 +11,7 @@ export function DetailPanel() {
 
   if (!selectedTask) {
     return (
-      <aside className="grid place-items-center bg-pane">
+      <aside className="grid min-h-0 place-items-center overflow-hidden bg-pane">
         <div className="px-10 text-center text-[13px] text-ink-mute">
           <div className="mb-1.5 text-[15px] text-ink-soft">选择一条待办查看详情</div>
           也可以直接在上方输入框新增
@@ -34,7 +34,9 @@ function DetailBody({ task }: { task: Task }) {
   const priority = PRIORITY[task.priority];
 
   return (
-    <aside className="flex min-w-0 flex-col bg-pane">
+    // min-h-0 + overflow-hidden：让内部 flex-1 的滚动区拿到有界高度，
+    // 否则说明文本框被拉大后会把下面的字段顶出可视区且无法滚动
+    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-pane">
       <div className="flex items-center px-5 pb-1 pt-4">
         <button
           type="button"
@@ -55,7 +57,7 @@ function DetailBody({ task }: { task: Task }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-8 pb-7 pt-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-7 pt-1">
         <input
           className="detail-title"
           value={title}
@@ -119,7 +121,7 @@ function DetailBody({ task }: { task: Task }) {
 
         <div className="relative mb-[22px]">
           <textarea
-            className="desc-box"
+            className="desc-box max-h-[60vh]"
             value={note}
             maxLength={DESC_MAX}
             placeholder="补充说明、拆解步骤、参考链接 ..."
@@ -246,7 +248,7 @@ function DetailBody({ task }: { task: Task }) {
 
         <div className="pt-3.5">
           <textarea
-            className="w-full resize-y rounded-[10px] border border-line bg-[#fcfcfd] px-3.5 py-3 text-[13.5px] leading-relaxed focus:border-[#d9e0fb] focus:bg-pane focus:ring-[3px] focus:ring-[#f0f3fe]"
+            className="max-h-[50vh] w-full resize-y rounded-[10px] border border-line bg-[#fcfcfd] px-3.5 py-3 text-[13.5px] leading-relaxed focus:border-[#d9e0fb] focus:bg-pane focus:ring-[3px] focus:ring-[#f0f3fe]"
             value={remark}
             placeholder="其他备注（可选）"
             onChange={(e) => {

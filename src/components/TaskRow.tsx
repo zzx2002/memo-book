@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react';
+import { useRef, type DragEvent } from 'react';
 import { folderHex, NO_FOLDER_COLOR, PRIORITY } from '../lib/constants';
 import { fmtMD, todayISO } from '../lib/dates';
 import { REPEAT_LABELS } from '../lib/repeat';
@@ -33,9 +33,11 @@ export function TaskRow({
   onDrop,
   onDragEnd
 }: TaskRowProps) {
-  const { toggleDone, select, folderById } = useApp();
+  const { toggleDone, select, folderById, editingId, startEdit, commitEdit, cancelEdit } = useApp();
   const folder = folderById(task.folderId);
   const today = todayISO();
+  const cancelled = useRef(false);
+  const editing = editingId === task.id;
 
   const dueClass =
     !task.done && task.dueDate
@@ -60,11 +62,12 @@ export function TaskRow({
     <div
       className={className}
       data-task={task.id}
-      draggable={draggable}
+      draggable={draggable && !editing}
       onClick={() => select(task.id)}
-      onDoubleClick={() => toggleDone(task.id)}
+      // 双击进入内联重命名（标记完成请用左侧勾选框，避免误触）
+      onDoubleClick={() => !task.done && startEdit(task.id)}
       onDragStart={
-        draggable
+        draggable && !editing
           ? (e) => {
               e.dataTransfer?.setData('text/plain', String(task.id));
               if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
@@ -73,7 +76,7 @@ export function TaskRow({
           : undefined
       }
       onDragOver={
-        draggable
+        draggable && !editing
           ? (e) => {
               e.preventDefault();
               if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -82,14 +85,14 @@ export function TaskRow({
           : undefined
       }
       onDrop={
-        draggable
+        draggable && !editing
           ? (e) => {
               e.preventDefault();
               onDrop?.();
             }
           : undefined
       }
-      onDragEnd={draggable ? () => onDragEnd?.() : undefined}
+      onDragEnd={draggable && !editing ? () => onDragEnd?.() : undefined}
     >
       {draggable ? (
         <span className={`grip${gripAlways ? ' always' : ''}`} title="拖拽调整顺序">
@@ -115,7 +118,35 @@ export function TaskRow({
         style={{ background: task.done ? '#d4d7de' : PRIORITY[task.priority].color }}
       />
 
-      <span className="title">{task.title}</span>
+      {editing ? (
+        <input
+          className="min-w-0 flex-1 rounded-md border border-accent bg-pane px-1.5 py-0.5 text-[14px]"
+          defaultValue={task.title}
+          maxLength={140}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitEdit(task.id, e.currentTarget.value);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              cancelled.current = true;
+              cancelEdit();
+            }
+          }}
+          onBlur={(e) => {
+            if (cancelled.current) {
+              cancelled.current = false;
+              return;
+            }
+            commitEdit(task.id, e.target.value);
+          }}
+        />
+      ) : (
+        <span className="title">{task.title}</span>
+      )}
 
       <span className="tag">
         <span
