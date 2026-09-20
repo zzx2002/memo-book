@@ -228,8 +228,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Version
 
 - 复用本机 git 凭据（Git Credential Manager），**不需要安装 gh、也不读取任何环境变量里的 token**；
   token 只在进程内存与一个临时文件中存在，用完立即删除，从不打印
-- 幂等：release 已存在时只补传缺失的资产，同名资产会跳过
+- 资产按**版本号**挑选（`*$Version*-setup.exe`）：`bundle/nsis` 里会留着历史版本的安装包，
+  用 `-First 1` 会抓到最旧的，曾导致把 0.4.0 的安装器当成 0.5.0 发出去
+- 上传前用**字节数**比对远端同名资产：一致则跳过，不一致则删除重传（这条规则能自动发现发错的资产）
+- 不属于本版本的历史资产会被自动 PRUNE
 - 依赖 Windows PowerShell 5.1，脚本文件需保存为 **UTF-8 with BOM**（否则中文会按 GBK 解析报语法错误）
+
+### 发布后自查（重要）
+
+下载 CDN 会缓存资产 URL：**同名文件删除后重传，裸链接可能仍返回旧内容**。因此校验时：
+
+```powershell
+# 1) 走 API 直取（绕过 CDN），最权威
+curl.exe -H "Authorization: Bearer <token>" -H "Accept: application/octet-stream" `
+  -o out.exe https://api.github.com/repos/zzx2002/memo-book/releases/assets/<asset_id>
+# 2) 或给裸链接加个时间戳参数绕过缓存
+curl.exe -L -o out.exe "https://github.com/.../download/v0.5.0/MemoBook_0.5.0_x64-setup.exe?cb=1234567890"
+# 3) 两者都应与本地构建产物 SHA-256 一致，并检查内嵌版本
+(Get-Item out.exe).VersionInfo.ProductVersion
+```
+
+缓存通常几分钟内过期；确认服务器端内容正确后，裸链接稍后会自动跟上。
 
 ## 后续规划
 
