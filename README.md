@@ -187,6 +187,27 @@ pnpm desktop:build      # 打包桌面安装包
 | `Enter` | 新增待办（可连续输入） |
 | `Esc` | 清空搜索 / 关闭详情面板 / 取消输入 |
 
+## 发布新版本
+
+```powershell
+# 1) 改版本号（package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml）
+# 2) 提交并打标签
+git tag -a v0.5.0 -m "我的记事簿 v0.5.0"
+git push origin master v0.5.0
+# 3) 打包（nsis 生成 .exe 安装器，msi 需要额外下载 WiX 工具链）
+pnpm tauri build --bundles nsis
+# 4) 写一份本版更新说明到 .release-notes.md（首次发布时必须存在；补传资产时可省略）
+# 5) 发布：脚本会自动收集 bundle/nsis、bundle/msi 与 release/memo-book.exe 并改名上传
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Version 0.5.0
+```
+
+`scripts/release.ps1` 说明：
+
+- 复用本机 git 凭据（Git Credential Manager），**不需要安装 gh、也不读取任何环境变量里的 token**；
+  token 只在进程内存与一个临时文件中存在，用完立即删除，从不打印
+- 幂等：release 已存在时只补传缺失的资产，同名资产会跳过
+- 依赖 Windows PowerShell 5.1，脚本文件需保存为 **UTF-8 with BOM**（否则中文会按 GBK 解析报语法错误）
+
 ## 后续规划
 
 - 开机自启开关、自动更新（updater 插件）与安装包签名

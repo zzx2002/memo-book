@@ -16,3 +16,6 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 *.log
+
+# 发版临时文件（每次发布前现写）
+.release-notes.md
