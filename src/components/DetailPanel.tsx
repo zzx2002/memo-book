@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { DESC_MAX, folderHex, NO_FOLDER_COLOR, PRIORITY, PRIORITY_ORDER } from '../lib/constants';
 import { fmtDateTime, fmtFull, fmtMDW, fmtStamp, toDateInput, toDateTimeInput } from '../lib/dates';
+import { REPEAT_LABELS, REPEAT_ORDER } from '../lib/repeat';
 import { useApp } from '../state/AppContext';
 import type { Task } from '../types';
 import { Icon, type IconName } from './Icon';
@@ -100,6 +101,14 @@ function DetailBody({ task }: { task: Task }) {
                 <span className="k">提醒</span>
                 <span className="v">{fmtDateTime(task.remindAt)}</span>
               </span>
+            </span>
+          ) : null}
+          {task.repeat !== 'none' ? (
+            <span className="chip">
+              <span className="grid place-items-center text-ink-soft">
+                <Icon name="repeat" size={13} />
+              </span>
+              {REPEAT_LABELS[task.repeat]}
             </span>
           ) : null}
           <span className="chip">
@@ -216,6 +225,25 @@ function DetailBody({ task }: { task: Task }) {
           onChange={(value) => updateTask(task.id, { remindAt: value })}
         />
 
+        <div className="field-row">
+          <span className="k">重复</span>
+          <div className="flex min-h-[38px] items-center gap-2">
+            <div className="flex flex-1 gap-2">
+              {REPEAT_ORDER.map((rule) => (
+                <button
+                  key={rule}
+                  type="button"
+                  data-r={rule}
+                  className={`seg-btn${task.repeat === rule ? ' on' : ''}`}
+                  onClick={() => updateTask(task.id, { repeat: rule })}
+                >
+                  {REPEAT_LABELS[rule]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <div className="pt-3.5">
           <textarea
             className="w-full resize-y rounded-[10px] border border-line bg-[#fcfcfd] px-3.5 py-3 text-[13.5px] leading-relaxed focus:border-[#d9e0fb] focus:bg-pane focus:ring-[3px] focus:ring-[#f0f3fe]"
@@ -267,22 +295,56 @@ function DateField({
   placeholder: boolean;
   onChange: (value: string | null) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const inputValue = type === 'date' ? toDateInput(value) : toDateTimeInput(value);
+
+  /**
+   * 原生输入框是透明的、铺满整块区域。直接点它只会聚焦某个字段段（看不见任何反馈），
+   * 必须显式调用 showPicker() 才会弹出系统日历/时间选择器。
+   */
+  const openPicker = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const picker = el as HTMLInputElement & { showPicker?: () => void };
+    try {
+      if (typeof picker.showPicker === 'function') picker.showPicker();
+      else el.focus();
+    } catch {
+      el.focus();
+    }
+  };
+
   return (
     <div className="field-row">
       <span className="k">{label}</span>
       <div className="flex min-h-[38px] items-center gap-2">
-        <div className="date-field">
+        <div className="date-field" onClick={openPicker}>
           <span className="grid flex-none place-items-center text-ink-soft">
             <Icon name={icon} size={14} />
           </span>
           <span className={`txt${placeholder ? ' ph' : ''}`}>{display}</span>
           <input
+            ref={inputRef}
             type={type}
             value={inputValue}
+            aria-label={label}
             onChange={(e) => onChange(e.target.value ? e.target.value : null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openPicker();
+              }
+            }}
           />
-          <button type="button" className="clear" title="清除" onClick={() => onChange(null)}>
+          <button
+            type="button"
+            className="clear"
+            title="清除"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange(null);
+            }}
+          >
             <Icon name="x" size={13} />
           </button>
         </div>

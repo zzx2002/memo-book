@@ -27,7 +27,19 @@ console.log("今天/逾期 :", one("SELECT COUNT(*) FROM tasks WHERE done = 0 AN
 console.log("即将到来  :", one("SELECT COUNT(*) FROM tasks WHERE done = 0 AND due_date > date('now')"));
 console.log('已完成    :', one('SELECT COUNT(*) FROM tasks WHERE done = 1'));
 console.log('优先级分布:', JSON.stringify(db.prepare('SELECT priority, COUNT(*) AS n FROM tasks GROUP BY priority').all()));
+console.log('重复规则  :', JSON.stringify(db.prepare('SELECT repeat_rule, COUNT(*) AS n FROM tasks GROUP BY repeat_rule').all()));
+console.log('sort_order:', JSON.stringify(db.prepare('SELECT MIN(sort_order) AS min, MAX(sort_order) AS max FROM tasks').get()));
 console.log('首条说明长度:', one('SELECT LENGTH(note) FROM tasks WHERE title = \'完成项目方案初稿\''));
+
+const indexes = db
+  .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%' ORDER BY name")
+  .all()
+  .map((r) => r.name);
+console.log('索引      :', indexes.join(' '));
+if (!indexes.includes('idx_tasks_sort')) {
+  console.error('✘ 缺少 idx_tasks_sort（v0.2 手动排序索引）');
+  process.exit(1);
+}
 
 const folders = db.prepare('SELECT id, name, color FROM folders ORDER BY sort_order').all();
 console.log('文件夹    :', folders.map((f) => `${f.id}:${f.name}(${f.color})`).join(' '));
@@ -42,6 +54,19 @@ db.prepare('UPDATE tasks SET done = 1, completed_at = datetime(\'now\') WHERE id
 db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 db.prepare('DELETE FROM folders WHERE id = 3').run();
 console.log('写入/更新/删除演练: OK');
+
+// 演练拖拽排序：把最后一条挪到最前，回写 sort_order
+const ordered = db.prepare('SELECT id FROM tasks ORDER BY sort_order').all().map((r) => r.id);
+const moved = [ordered[ordered.length - 1], ...ordered.slice(0, -1)];
+const update = db.prepare('UPDATE tasks SET sort_order = ? WHERE id = ?');
+moved.forEach((id, index) => update.run(index, id));
+const firstAfter = one('SELECT id FROM tasks ORDER BY sort_order LIMIT 1');
+if (firstAfter !== moved[0]) {
+  console.error('✘ 拖拽排序回写失败');
+  process.exit(1);
+}
+console.log('拖拽排序回写演练: OK');
+
 console.log('外键级联后未分类任务数:', one('SELECT COUNT(*) FROM tasks WHERE folder_id IS NULL'));
 
 db.close();

@@ -1,5 +1,8 @@
 export type Priority = 'high' | 'medium' | 'low';
 
+/** 重复规则 */
+export type RepeatRule = 'none' | 'daily' | 'weekly' | 'monthly';
+
 export type FolderColor = 'orange' | 'green' | 'blue' | 'purple' | 'pink' | 'teal';
 
 export interface Folder {
@@ -25,6 +28,10 @@ export interface Task {
   dueDate: string | null;
   /** 提醒时间 YYYY-MM-DDTHH:mm */
   remindAt: string | null;
+  /** 重复规则 */
+  repeat: RepeatRule;
+  /** 手动排序位次（越小越靠前） */
+  sortOrder: number;
   createdAt: string;
   completedAt: string | null;
 }
@@ -35,7 +42,7 @@ export type SmartViewId = 'inbox' | 'today' | 'upcoming' | 'done';
 
 export type View = { type: 'smart'; id: SmartViewId } | { type: 'folder'; id: number };
 
-export type SortKey = 'created' | 'due' | 'priority';
+export type SortKey = 'created' | 'due' | 'priority' | 'manual';
 
 export interface TaskPatch {
   title?: string;
@@ -47,6 +54,8 @@ export interface TaskPatch {
   startDate?: string | null;
   dueDate?: string | null;
   remindAt?: string | null;
+  repeat?: RepeatRule;
+  sortOrder?: number;
   completedAt?: string | null;
 }
 
@@ -60,6 +69,8 @@ export interface Repo {
   createTask(input: NewTask): Promise<Task>;
   updateTask(id: number, patch: TaskPatch): Promise<void>;
   deleteTask(id: number): Promise<void>;
+  /** 按给定顺序回写 sort_order，用于拖拽排序 */
+  reorderTasks(orderedIds: number[]): Promise<void>;
   clearCompleted(): Promise<void>;
   loadDemoData(): Promise<void>;
 }

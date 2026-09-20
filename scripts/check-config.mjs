@@ -20,6 +20,8 @@ for (const file of ['package.json', 'src-tauri/tauri.conf.json', 'src-tauri/capa
 const conf = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
 const win = conf.app.windows[0];
 ok(`窗口: ${win.title} ${win.width}x${win.height} (min ${win.minWidth}x${win.minHeight})`);
+if (win.dragDropEnabled === false) ok('dragDropEnabled=false（Windows 下启用前端 HTML5 拖拽的必要条件）');
+else no('dragDropEnabled 未显式关闭：Windows 上系统级文件拖放会抢走前端拖拽事件');
 ok(`productName=${conf.productName} identifier=${conf.identifier}`);
 ok(`devUrl=${conf.build.devUrl} frontendDist=${conf.build.frontendDist}`);
 for (const icon of conf.bundle.icon) {

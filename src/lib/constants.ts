@@ -38,9 +38,10 @@ export const SMART_ORDER: SmartViewId[] = ['inbox', 'today', 'upcoming', 'done']
 export const SORTS: Record<SortKey, string> = {
   created: '按创建时间',
   due: '按截止日期',
-  priority: '按优先级'
+  priority: '按优先级',
+  manual: '手动排序'
 };
 
-export const SORT_ORDER: SortKey[] = ['created', 'due', 'priority'];
+export const SORT_ORDER: SortKey[] = ['created', 'due', 'priority', 'manual'];
 
 export const STORAGE_KEY = 'memo-book-v1';

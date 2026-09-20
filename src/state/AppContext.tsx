@@ -10,7 +10,8 @@ import {
   type RefObject
 } from 'react';
 import { PALETTE, SMART_VIEWS } from '../lib/constants';
-import { todayISO } from '../lib/dates';
+import { fmtMD, todayISO } from '../lib/dates';
+import { buildNextOccurrence } from '../lib/repeat';
 import { getRepo } from '../lib/repo';
 import type { Folder, FolderColor, Priority, SortKey, Task, TaskPatch, View } from '../types';
 
@@ -43,6 +44,13 @@ interface AppApi {
   toast: string | null;
   /** 新增文件夹时推荐的配色 */
   nextFolderColor: FolderColor;
+  /** 搜索关键词 */
+  query: string;
+  setQuery: (value: string) => void;
+  searchInputRef: RefObject<HTMLInputElement>;
+  focusSearch: () => void;
+  /** 拖拽排序：按新顺序回写 */
+  reorder: (orderedIds: number[]) => void;
   addInputRef: RefObject<HTMLInputElement>;
   focusAddInput: () => void;
   setView: (view: View) => void;
@@ -80,8 +88,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showDone, setShowDone] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   const addInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<number | null>(null);
 
   /* ---------- 初始载入 ---------- */
@@ -111,6 +121,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const focusAddInput = useCallback(() => addInputRef.current?.focus(), []);
+  const focusSearch = useCallback(() => searchInputRef.current?.focus(), []);
   const folderById = useCallback(
     (id: number | null) => (id == null ? null : folders.find((f) => f.id === id) ?? null),
     [folders]
@@ -134,8 +145,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [tasks]);
 
   /* ---------- 过滤 + 排序 ---------- */
-  const { activeTasks, doneTasks } = useMemo(() => {
+  const { activeTasks, doneTasks, matched } = useMemo(() => {
     const today = todayISO();
+    const keyword = query.trim().toLowerCase();
     // 先按视图圈定范围（不区分完成状态），再拆成未完成 / 已完成两组，
     // 这样「收件箱 / 今天 / 文件夹」底部也能列出范围内已完成的待办。
     const inScope = (t: Task): boolean => {
@@ -144,8 +156,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (view.id === 'today') return !!t.dueDate && t.dueDate <= today;
       return !!t.dueDate && t.dueDate > today;
     };
-    const pool = tasks.filter(inScope);
+    const hitKeyword = (t: Task): boolean =>
+      !keyword ||
+      t.title.toLowerCase().includes(keyword) ||
+      t.note.toLowerCase().includes(keyword) ||
+      t.remark.toLowerCase().includes(keyword);
+
+    const pool = tasks.filter((t) => inScope(t) && hitKeyword(t));
     const sorter = (a: Task, b: Task): number => {
+      if (sort === 'manual') {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.id - b.id;
+      }
       if (sort === 'due') {
         const av = a.dueDate ?? '9999-99-99';
         const bv = b.dueDate ?? '9999-99-99';
@@ -160,12 +182,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     return {
       activeTasks: pool.filter((t) => !t.done).sort(sorter),
-      doneTasks: pool.filter((t) => t.done).sort(sorter)
+      doneTasks: pool.filter((t) => t.done).sort(sorter),
+      matched: pool.length
     };
-  }, [tasks, view, sort]);
+  }, [tasks, view, sort, query]);
 
   const listTitle = view.type === 'smart' ? SMART_VIEWS[view.id].label : folderById(view.id)?.name ?? '文件夹';
-  const listSub = view.type === 'smart' ? SMART_VIEWS[view.id].sub : '按文件夹归类，保持专注';
+  const keyword = query.trim();
+  const listSub = keyword
+    ? `在「${listTitle}」中匹配 “${keyword}” · ${matched} 条`
+    : view.type === 'smart'
+      ? SMART_VIEWS[view.id].sub
+      : '按文件夹归类，保持专注';
   const selectedTask = useMemo(
     () => (selectedId == null ? null : tasks.find((t) => t.id === selectedId) ?? null),
     [selectedId, tasks]
@@ -222,14 +250,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [notify, repo]
   );
 
+  /** 完成一个重复任务：本轮标记完成，并自动生成下一次实例 */
+  const completeRepeating = useCallback(
+    async (task: Task) => {
+      const next = buildNextOccurrence(task);
+      updateTask(task.id, { done: true, repeat: 'none' });
+      if (!next) {
+        notify('已完成');
+        return;
+      }
+      try {
+        const created = await repo.createTask({
+          title: next.title,
+          note: next.note,
+          remark: next.remark,
+          priority: next.priority,
+          folderId: next.folderId,
+          startDate: next.startDate,
+          dueDate: next.dueDate,
+          remindAt: next.remindAt,
+          repeat: next.repeat
+        });
+        setTasks((prev) => [...prev, created]);
+        notify(next.dueDate ? `已完成，下一次：${fmtMD(next.dueDate)}` : '已完成，已生成下一次');
+      } catch (e) {
+        notify('生成下一次失败：' + (e instanceof Error ? e.message : String(e)));
+      }
+    },
+    [notify, repo, updateTask]
+  );
+
   const toggleDone = useCallback(
     (id: number) => {
       const task = tasks.find((t) => t.id === id);
       if (!task) return;
-      updateTask(id, { done: !task.done });
-      notify(task.done ? '已恢复为未完成' : '已完成');
+      if (task.done) {
+        updateTask(id, { done: false });
+        notify('已恢复为未完成');
+        return;
+      }
+      if (task.repeat !== 'none') {
+        void completeRepeating(task);
+        return;
+      }
+      updateTask(id, { done: true });
+      notify('已完成');
     },
-    [notify, tasks, updateTask]
+    [completeRepeating, notify, tasks, updateTask]
+  );
+
+  /** 拖拽排序：按给定顺序回写 sort_order */
+  const reorder = useCallback(
+    (orderedIds: number[]) => {
+      if (!orderedIds.length) return;
+      const rank = new Map(orderedIds.map((id, index) => [id, index]));
+      setTasks((prev) =>
+        prev.map((t) => (rank.has(t.id) ? { ...t, sortOrder: rank.get(t.id) as number } : t))
+      );
+      void repo.reorderTasks(orderedIds).catch(() => notify('排序保存失败'));
+    },
+    [notify, repo]
   );
 
   const removeTask = useCallback(
@@ -308,10 +388,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!typing) setSelectedId(null);
         return;
       }
-      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) {
+        // Ctrl/Cmd+F 与 Ctrl/Cmd+K 都聚焦搜索框
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'k')) {
+          e.preventDefault();
+          focusSearch();
+        }
+        return;
+      }
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         focusAddInput();
+      }
+      if (e.key === '/') {
+        e.preventDefault();
+        focusSearch();
       }
       const map: Record<string, View> = {
         '1': { type: 'smart', id: 'inbox' },
@@ -324,7 +415,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [focusAddInput, setView]);
+  }, [focusAddInput, focusSearch, setView]);
 
   const palette = useMemo(() => {
     const used = new Set(folders.map((f) => f.color));
@@ -349,6 +440,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectedTask,
     toast,
     nextFolderColor: palette,
+    query,
+    setQuery,
+    searchInputRef,
+    focusSearch,
+    reorder,
     addInputRef,
     focusAddInput,
     setView,

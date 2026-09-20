@@ -36,6 +36,8 @@ function seedState(): LocalState {
       startDate: t.startOffset == null ? null : shiftISO(t.startOffset),
       dueDate: t.dueOffset == null ? null : shiftISO(t.dueOffset),
       remindAt: t.remindTime && t.dueOffset != null ? `${shiftISO(t.dueOffset)}T${t.remindTime}` : null,
+      repeat: t.repeat ?? 'none',
+      sortOrder: seq,
       createdAt: new Date(now + seq * 1000).toISOString(),
       completedAt: t.done && t.doneOffset != null ? new Date(now + t.doneOffset * 864e5).toISOString() : null
     };
@@ -119,6 +121,8 @@ export const localRepo: Repo = {
       startDate: input.startDate ?? null,
       dueDate: input.dueDate ?? null,
       remindAt: input.remindAt ?? null,
+      repeat: input.repeat ?? 'none',
+      sortOrder: s.tasks.reduce((max, t) => Math.max(max, t.sortOrder), -1) + 1,
       createdAt: new Date().toISOString(),
       completedAt: input.completedAt ?? null
     };
@@ -136,6 +140,13 @@ export const localRepo: Repo = {
   async deleteTask(id) {
     const s = load();
     s.tasks = s.tasks.filter((t) => t.id !== id);
+    persist();
+  },
+
+  async reorderTasks(orderedIds) {
+    const s = load();
+    const rank = new Map(orderedIds.map((id, index) => [id, index]));
+    s.tasks = s.tasks.map((t) => (rank.has(t.id) ? { ...t, sortOrder: rank.get(t.id) as number } : t));
     persist();
   },
 

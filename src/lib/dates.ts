@@ -63,3 +63,19 @@ export function fmtStamp(value?: string | null): string {
   if (!d || Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
 }
+
+/** 在某个日期上加减天数 */
+export function addDays(value: string, days: number): string {
+  const d = parseISO(value);
+  if (!d) return value;
+  d.setDate(d.getDate() + days);
+  return toISO(d);
+}
+
+/** b - a 的天数差（按自然日计算） */
+export function daysBetween(a: string, b: string): number {
+  const da = parseISO(a);
+  const db = parseISO(b);
+  if (!da || !db) return 0;
+  return Math.round((db.getTime() - da.getTime()) / 864e5);
+}

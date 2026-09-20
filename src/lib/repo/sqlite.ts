@@ -42,6 +42,8 @@ function rowToTask(r: Row): Task {
     startDate: (r.start_date as string | null) ?? null,
     dueDate: (r.due_date as string | null) ?? null,
     remindAt: normalizeDateTime(r.remind_at as string | null),
+    repeat: (r.repeat_rule as Task['repeat']) ?? 'none',
+    sortOrder: Number(r.sort_order ?? 0),
     createdAt: String(r.created_at ?? ''),
     completedAt: normalizeDateTime(r.completed_at as string | null)
   };
@@ -57,6 +59,8 @@ const COLUMN: Record<keyof TaskPatch, string> = {
   startDate: 'start_date',
   dueDate: 'due_date',
   remindAt: 'remind_at',
+  repeat: 'repeat_rule',
+  sortOrder: 'sort_order',
   completedAt: 'completed_at'
 };
 
@@ -74,8 +78,8 @@ async function selectTask(id: number): Promise<Task> {
 async function insertTask(input: NewTask): Promise<Task> {
   const db = await getDb();
   const res = await db.execute(
-    `INSERT INTO tasks (title, note, remark, done, priority, folder_id, start_date, due_date, remind_at, created_at, completed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, datetime('now'), $10)`,
+    `INSERT INTO tasks (title, note, remark, done, priority, folder_id, start_date, due_date, remind_at, repeat_rule, sort_order, created_at, completed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE((SELECT MAX(sort_order) + 1 FROM tasks), 0), datetime('now'), $11)`,
     [
       input.title,
       input.note ?? '',
@@ -86,6 +90,7 @@ async function insertTask(input: NewTask): Promise<Task> {
       input.startDate ?? null,
       input.dueDate ?? null,
       input.remindAt ?? null,
+      input.repeat ?? 'none',
       input.completedAt ?? null
     ]
   );
@@ -141,6 +146,13 @@ export const sqliteRepo: Repo = {
     await db.execute('DELETE FROM tasks WHERE id = $1', [id]);
   },
 
+  async reorderTasks(orderedIds) {
+    const db = await getDb();
+    for (let index = 0; index < orderedIds.length; index += 1) {
+      await db.execute('UPDATE tasks SET sort_order = $1 WHERE id = $2', [index, orderedIds[index]]);
+    }
+  },
+
   async clearCompleted() {
     const db = await getDb();
     await db.execute('DELETE FROM tasks WHERE done = 1');
@@ -167,7 +179,8 @@ export const sqliteRepo: Repo = {
         dueDate: t.dueOffset == null ? null : shiftISO(t.dueOffset),
         remindAt: t.remindTime && t.dueOffset != null ? `${shiftISO(t.dueOffset)}T${t.remindTime}` : null,
         done: !!t.done,
-        completedAt: t.done && t.doneOffset != null ? `${shiftISO(t.doneOffset)} 10:00:00` : null
+        completedAt: t.done && t.doneOffset != null ? `${shiftISO(t.doneOffset)} 10:00:00` : null,
+        repeat: t.repeat ?? 'none'
       });
     }
   }

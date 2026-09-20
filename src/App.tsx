@@ -17,12 +17,7 @@ function Shell() {
   return (
     <div className="grid h-screen min-w-[1040px] grid-rows-[44px_1fr] overflow-hidden">
       <div className="flex items-center gap-2 border-b border-line bg-side px-4">
-        <div className="lights">
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="ml-3 text-[12.5px] tracking-wide text-ink-mute">我的记事簿</div>
+        <div className="text-[12.5px] tracking-wide text-ink-mute">我的记事簿</div>
         <div className="ml-auto text-[11.5px] text-ink-faint">
           {storage === 'sqlite' ? '本地 SQLite 存储' : '浏览器预览模式（数据存在 localStorage）'}
         </div>

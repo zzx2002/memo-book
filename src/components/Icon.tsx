@@ -14,7 +14,10 @@ export type IconName =
   | 'clock'
   | 'flag'
   | 'trash'
-  | 'check';
+  | 'check'
+  | 'search'
+  | 'repeat'
+  | 'grip';
 
 interface IconDef {
   node: ReactNode;
@@ -93,7 +96,38 @@ const DEFS: Record<IconName, IconDef> = {
   },
   flag: { node: <path d="M6 21V4M6 5h11l-1.6 3.6L17 12H6" />, sw: 1.8 },
   trash: { node: <path d="M4.5 7h15M9.5 7V5h5v2M7 7l1 12.5h8L17 7" />, sw: 1.8 },
-  check: { node: <path d="M5 12.6l4.6 4.4L19 6.5" />, sw: 3.2 }
+  check: { node: <path d="M5 12.6l4.6 4.4L19 6.5" />, sw: 3.2 },
+  search: {
+    node: (
+      <>
+        <circle cx="10.8" cy="10.8" r="6.3" />
+        <path d="M15.6 15.6L20.5 20.5" />
+      </>
+    ),
+    sw: 1.8
+  },
+  repeat: {
+    node: (
+      <>
+        <path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3M19.5 12a7.5 7.5 0 0 1-12.8 5.3" />
+        <path d="M17.6 3.2v3.6h-3.6M6.4 20.8v-3.6h3.6" />
+      </>
+    ),
+    sw: 1.7
+  },
+  grip: {
+    node: (
+      <>
+        <circle cx="9.5" cy="6" r="1.4" />
+        <circle cx="14.5" cy="6" r="1.4" />
+        <circle cx="9.5" cy="12" r="1.4" />
+        <circle cx="14.5" cy="12" r="1.4" />
+        <circle cx="9.5" cy="18" r="1.4" />
+        <circle cx="14.5" cy="18" r="1.4" />
+      </>
+    ),
+    fill: true
+  }
 };
 
 export function Icon({

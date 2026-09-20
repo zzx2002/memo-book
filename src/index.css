@@ -57,23 +57,6 @@
 }
 
 @layer components {
-  /* ---------- 窗口 ---------- */
-  .lights {
-    @apply flex gap-2;
-  }
-  .lights i {
-    @apply block h-3 w-3 rounded-full;
-  }
-  .lights i:nth-child(1) {
-    background: #ff5f57;
-  }
-  .lights i:nth-child(2) {
-    background: #febc2e;
-  }
-  .lights i:nth-child(3) {
-    background: #28c840;
-  }
-
   /* ---------- 左侧导航 ---------- */
   .nav-item {
     @apply flex h-[38px] items-center gap-2.5 rounded-[10px] px-2.5 text-left text-[14px] text-ink-soft transition-colors;
@@ -199,7 +182,7 @@
     @apply flex max-w-[92px] flex-none items-center gap-1.5 text-[12.5px] text-ink-soft;
   }
   .task-row .due {
-    @apply w-[74px] flex-none text-right text-[12.5px] tabular-nums text-ink-soft;
+    @apply flex w-[92px] flex-none items-center justify-end gap-1 text-right text-[12.5px] tabular-nums text-ink-soft;
   }
   .task-row .due.overdue {
     @apply font-semibold text-hi;
@@ -248,6 +231,24 @@
   }
   .group-head.collapsed .chev {
     @apply -rotate-90;
+  }
+
+  /* ---------- 拖拽排序 ---------- */
+  .task-row .grip {
+    @apply -ml-1 grid h-4 w-4 flex-none cursor-grab place-items-center text-ink-faint opacity-0 transition-opacity;
+  }
+  .task-row:hover .grip,
+  .task-row .grip.always {
+    @apply opacity-100;
+  }
+  .task-row .grip:active {
+    cursor: grabbing;
+  }
+  .task-row.dragging {
+    @apply opacity-40;
+  }
+  .task-row.drop-target {
+    @apply border-accent bg-[#f2f5ff];
   }
 
   /* ---------- 详情 ---------- */
@@ -312,6 +313,11 @@
   .seg-btn.on[data-p='low'] {
     @apply border-[#cadcfb] bg-[#f1f6fe] text-lo;
   }
+  .seg-btn.on[data-r='daily'],
+  .seg-btn.on[data-r='weekly'],
+  .seg-btn.on[data-r='monthly'] {
+    @apply border-[#cadcfb] bg-[#f1f6fe] text-accent-ink;
+  }
 
   .pick {
     @apply relative flex-1;
@@ -331,6 +337,9 @@
   }
   .date-field:hover {
     @apply border-[#dcdfe7];
+  }
+  .date-field:focus-within {
+    @apply border-[#c9d3fb] ring-[3px] ring-[#f0f3fe];
   }
   .date-field .txt {
     @apply flex-1 truncate;

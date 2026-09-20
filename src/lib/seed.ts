@@ -1,4 +1,4 @@
-import type { FolderColor, Priority } from '../types';
+import type { FolderColor, Priority, RepeatRule } from '../types';
 
 export interface SeedFolder {
   key: 'work' | 'life' | 'study';
@@ -25,6 +25,8 @@ export interface SeedTask {
   done?: boolean;
   /** 已完成任务的完成时间（相对今天的天数） */
   doneOffset?: number;
+  /** 重复规则 */
+  repeat?: RepeatRule;
 }
 
 /** 与设计稿一致的示例数据 */
@@ -48,10 +50,10 @@ export const SEED_TASKS: SeedTask[] = [
   },
   { title: '预约年度体检', priority: 'medium', folder: 'life', dueOffset: 1, startOffset: 0 },
   { title: '阅读《高效能人士的七个习惯》', priority: 'medium', folder: 'study', dueOffset: 3 },
-  { title: '整理桌面与文件', priority: 'low', folder: 'life', dueOffset: 0 },
+  { title: '整理桌面与文件', priority: 'low', folder: 'life', dueOffset: 0, repeat: 'daily' },
   { title: '准备下周会议材料', priority: 'high', folder: 'work', dueOffset: -1 },
   { title: '购买生日礼物', priority: 'medium', folder: 'life', dueOffset: 2 },
-  { title: '复习英语单词', priority: 'low', folder: 'study', dueOffset: 6 },
+  { title: '复习英语单词', priority: 'low', folder: 'study', dueOffset: 6, repeat: 'weekly' },
   { title: '制定 5 月健身计划', priority: 'low', folder: 'life', dueOffset: 7 },
   { title: '提交上周工作总结', priority: 'medium', folder: 'work', dueOffset: -3, done: true, doneOffset: -3 },
   { title: '清理邮箱', priority: 'low', folder: 'work', dueOffset: -4, done: true, doneOffset: -4 },
