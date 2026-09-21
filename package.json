@@ -1,7 +1,7 @@
 {
   "name": "memo-book",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "轻量化桌面待办记事簿 · Tauri 2 + React + TypeScript + SQLite + Tailwind",
   "scripts": {

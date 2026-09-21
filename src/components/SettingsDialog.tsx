@@ -8,6 +8,13 @@ import {
   type DataPaths
 } from '../lib/desktop';
 import { AUTO_BACKUP_OPTIONS, TRASH_RETENTION_OPTIONS } from '../lib/settings';
+import {
+  clearAiKey,
+  getAiKeyStatus,
+  setAiKey,
+  testAiConnection,
+  type AiKeyStatus
+} from '../lib/ai';
 import { formatReleaseDate } from '../lib/updates';
 import { APP_VERSION } from '../lib/version';
 import { useApp } from '../state/AppContext';
@@ -26,6 +33,10 @@ export function SettingsDialog() {
   const [paths, setPaths] = useState<DataPaths | null>(null);
   const [backups, setBackups] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<AiKeyStatus>({ configured: false, hint: '' });
+  const [keyInput, setKeyInput] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -33,6 +44,7 @@ export function SettingsDialog() {
     void isAutostartEnabled().then((value) => alive && setAutostartState(value));
     void getDataPaths().then((value) => alive && setPaths(value));
     void listBackups().then((value) => alive && setBackups(value));
+    void getAiKeyStatus().then((value) => alive && setKeyStatus(value));
     return () => {
       alive = false;
     };
@@ -60,6 +72,50 @@ export function SettingsDialog() {
     await runBackup();
     setBackups(await listBackups());
     setBusy(false);
+  };
+
+  const saveKey = async () => {
+    const value = keyInput.trim();
+    if (!value) return;
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      const status = await setAiKey(value);
+      setKeyStatus(status);
+      setKeyInput('');
+      setAiMessage('已保存到系统凭据管理器');
+    } catch (e) {
+      setAiMessage('保存失败：' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const dropKey = async () => {
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      await clearAiKey();
+      setKeyStatus({ configured: false, hint: '' });
+      setAiMessage('已清除');
+    } catch (e) {
+      setAiMessage('清除失败：' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const testKey = async () => {
+    setAiBusy(true);
+    setAiMessage('测试中…');
+    try {
+      const usage = await testAiConnection();
+      setAiMessage('连接正常 · ' + usage);
+    } catch (e) {
+      setAiMessage('连接失败：' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setAiBusy(false);
+    }
   };
 
   return (
@@ -213,6 +269,62 @@ export function SettingsDialog() {
                 </button>
               </div>
             ) : null}
+          </div>
+        </Row>
+
+        <Row
+          label="AI 整理"
+          hint={
+            desktop
+              ? '把会议记录交给 DeepSeek 抽取待办。API Key 存在 Windows 凭据管理器，不写配置文件、前端也读不到；整理时会议文本会发送到 DeepSeek 服务器。'
+              : '浏览器预览模式无法安全保存 API Key，请在桌面端配置'
+          }
+        >
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+              <span className={keyStatus.configured ? 'text-ink-soft' : 'text-ink-mute'}>
+                {keyStatus.configured ? `已配置：${keyStatus.hint}` : '未配置'}
+              </span>
+              {keyStatus.configured ? (
+                <>
+                  <button type="button" className="ghost-btn" disabled={aiBusy} onClick={() => void testKey()}>
+                    测试连接
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-btn hover:!bg-[#fdf1f0] hover:!text-hi"
+                    disabled={aiBusy}
+                    onClick={() => void dropKey()}
+                  >
+                    清除
+                  </button>
+                </>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-pane px-2.5 text-[12.5px] focus:border-[#c9d3fb] focus:ring-[3px] focus:ring-[#eef1fe]"
+                placeholder="粘贴 DeepSeek API Key（sk-…）"
+                value={keyInput}
+                disabled={!desktop || aiBusy}
+                onChange={(e) => setKeyInput(e.target.value)}
+              />
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={!desktop || aiBusy || !keyInput.trim()}
+                onClick={() => void saveKey()}
+              >
+                保存
+              </button>
+            </div>
+
+            {aiMessage ? <div className="text-[11.5px] text-ink-soft">{aiMessage}</div> : null}
+            <div className="text-[11.5px] leading-relaxed text-ink-faint">
+              在 platform.deepseek.com 创建 Key；模型使用 deepseek-flash（支持 1M 上下文与 JSON 输出）。
+            </div>
           </div>
         </Row>
 

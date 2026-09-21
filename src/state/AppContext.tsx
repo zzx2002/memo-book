@@ -34,6 +34,7 @@ import {
   type Settings
 } from '../lib/settings';
 import { fetchLatestRelease, isNewer, RELEASES_PAGE, type ReleaseInfo } from '../lib/updates';
+import type { TaskDraft } from '../lib/ai';
 import type { Folder, FolderColor, Priority, SortKey, Task, TaskPatch, View } from '../types';
 
 const PRIORITY_WEIGHT: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -126,6 +127,11 @@ interface AppApi {
   bulkDelete: () => void;
   bulkSetPriority: (priority: Priority) => void;
   bulkSetFolder: (folderId: number | null) => void;
+  /** AI 整理会议记录 */
+  aiOpen: boolean;
+  openAi: () => void;
+  closeAi: () => void;
+  importDrafts: (drafts: TaskDraft[]) => Promise<void>;
   /** 检查更新（中间态：只提示 + 打开下载页，不做自动安装） */
   updateStatus: UpdateStatus;
   updateInfo: ReleaseInfo | null;
@@ -184,6 +190,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const addInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -839,6 +846,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [ready]);
 
+  /* ---------- AI 整理：把确认过的草稿批量写入 ---------- */
+  const openAi = useCallback(() => setAiOpen(true), []);
+  const closeAi = useCallback(() => setAiOpen(false), []);
+
+  const importDrafts = useCallback(
+    async (drafts: TaskDraft[]) => {
+      const nameToId = new Map(foldersRef.current.map((f) => [f.name.trim().toLowerCase(), f.id]));
+      const created: Task[] = [];
+      for (const draft of drafts) {
+        const title = draft.title.trim();
+        if (!title) continue;
+        const folderId = draft.folderName
+          ? nameToId.get(draft.folderName.trim().toLowerCase()) ?? null
+          : null;
+        try {
+          const task = await repo.createTask({
+            title,
+            note: draft.note,
+            priority: draft.priority,
+            folderId,
+            dueDate: draft.dueDate,
+            remindAt: draft.remindAt,
+            repeat: 'none'
+          });
+          created.push(task);
+        } catch {
+          /* 单条失败不阻塞其余 */
+        }
+      }
+
+      if (!created.length) {
+        notify('没有导入任何待办');
+        return;
+      }
+      setTasks((prev) => [...prev, ...created]);
+      setViewState({ type: 'smart', id: 'inbox' });
+      setAiOpen(false);
+      notify(`已导入 ${created.length} 条待办`, () => {
+        const ids = new Set(created.map((t) => t.id));
+        setTasks((prev) => prev.filter((t) => !ids.has(t.id)));
+        setSelectedId((cur) => (cur != null && ids.has(cur) ? null : cur));
+        void Promise.all(created.map((t) => repo.purgeTask(t.id))).catch(() => notify('撤销失败'));
+        notify('已撤销导入');
+      });
+    },
+    [notify, repo]
+  );
+
   /* ---------- 文件夹 ---------- */
   const addFolder = useCallback(    async (name: string, color: FolderColor) => {
       const value = name.trim();
@@ -988,6 +1043,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateError,
     checkForUpdates,
     openReleasePage,
+    aiOpen,
+    openAi,
+    closeAi,
+    importDrafts,
     addInputRef,
     focusAddInput,
     setView,

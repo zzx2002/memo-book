@@ -1,3 +1,4 @@
+mod ai;
 mod files;
 
 use tauri::{Emitter, Manager, WindowEvent};
@@ -122,6 +123,10 @@ pub fn run() {
             files::data_paths,
             files::open_data_dir,
             files::open_url,
+            ai::ai_key_status,
+            ai::ai_set_key,
+            ai::ai_clear_key,
+            ai::ai_chat,
         ])
         .setup(|app| {
             build_tray(app.handle())?;

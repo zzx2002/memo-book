@@ -75,6 +75,19 @@ for (const n of ['1', '2', '3', '4']) {
   else no(`lib.rs 缺少迁移 v${n}`);
 }
 const filesRs = readFileSync('src-tauri/src/files.rs', 'utf8');
+const aiRs = readFileSync('src-tauri/src/ai.rs', 'utf8');
+for (const cmd of ['ai_key_status', 'ai_set_key', 'ai_clear_key', 'ai_chat']) {
+  if (libRs.includes(`ai::${cmd}`) && aiRs.includes(`pub fn ${cmd}`)) ok(`Rust 命令已注册：${cmd}`);
+  else if (libRs.includes(`ai::${cmd}`) && aiRs.includes(`pub async fn ${cmd}`)) ok(`Rust 命令已注册：${cmd}`);
+  else no(`Rust 命令未注册或未实现：${cmd}`);
+}
+if (aiRs.includes('api.deepseek.com')) ok('ai.rs 指向 DeepSeek 官方端点');
+else no('ai.rs 未指向 DeepSeek 端点');
+if (aiRs.includes('keyring::Entry') || aiRs.includes('Entry::new')) ok('ai.rs 使用系统凭据管理器保存 Key');
+else no('ai.rs 未使用凭据管理器，Key 可能被落盘');
+if (cargo.includes('keyring') && cargo.includes('reqwest')) ok('Cargo.toml 已引入 keyring 与 reqwest');
+else no('Cargo.toml 缺少 keyring 或 reqwest');
+
 for (const cmd of [
   'export_text_file',
   'import_text_file',

@@ -1,3 +1,4 @@
+import { AiImportDialog } from './components/AiImportDialog';
 import { DetailPanel } from './components/DetailPanel';
 import { SettingsDialog } from './components/SettingsDialog';
 import { Sidebar } from './components/Sidebar';
@@ -25,6 +26,7 @@ function Shell() {
       </div>
 
       <SettingsDialog />
+      <AiImportDialog />
 
       {error ? (
         <div className="fixed left-1/2 top-4 max-w-[560px] -translate-x-1/2 rounded-xl border border-[#f6c9c5] bg-[#fdf1f0] px-4 py-3 text-[12.5px] text-hi shadow-pop">

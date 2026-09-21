@@ -23,7 +23,8 @@ export function Sidebar() {
     nextFolderColor,
     focusAddInput,
     storage,
-    openSettings
+    openSettings,
+    openAi
   } = useApp();
 
   const [adding, setAdding] = useState(false);
@@ -129,7 +130,16 @@ export function Sidebar() {
         </div>
       ) : null}
 
-      <div className="mt-auto pt-3">
+      <div className="mt-auto space-y-2 pt-3">
+        <button
+          type="button"
+          className="btn-add !bg-[#eef0f4] !text-ink-soft"
+          title="把会议记录整理成待办"
+          onClick={openAi}
+        >
+          <Icon name="sparkle" size={15} />
+          AI 整理会议记录
+        </button>
         <button type="button" className="btn-add" onClick={focusAddInput}>
           <Icon name="plus" size={15} />
           新增待办

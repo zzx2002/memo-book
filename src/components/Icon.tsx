@@ -19,7 +19,8 @@ export type IconName =
   | 'repeat'
   | 'grip'
   | 'settings'
-  | 'select';
+  | 'select'
+  | 'sparkle';
 
 interface IconDef {
   node: ReactNode;
@@ -147,6 +148,15 @@ const DEFS: Record<IconName, IconDef> = {
       </>
     ),
     sw: 1.7
+  },
+  sparkle: {
+    node: (
+      <>
+        <path d="M11 3.5l1.7 4.8 4.8 1.7-4.8 1.7L11 16.5 9.3 11.7 4.5 10l4.8-1.7z" />
+        <path d="M18 15l.8 2.2 2.2.8-2.2.8L18 21l-.8-2.2-2.2-.8 2.2-.8z" />
+      </>
+    ),
+    sw: 1.5
   }
 };
 

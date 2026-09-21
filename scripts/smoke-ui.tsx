@@ -633,7 +633,205 @@ await act(async () => {
 });
 await flush();
 
-/* ---------- 16. 持久化 ---------- */
+/* ---------- 16. AI 整理会议记录（v0.6） ---------- */
+const ai = await import('../src/lib/ai');
+
+const systemPrompt = ai.buildSystemPrompt({ today: '2026-09-20', weekday: '周日', folders: ['工作', '生活'] });
+expect(
+  systemPrompt.includes('2026-09-20') && systemPrompt.includes('周日') && systemPrompt.includes('工作'),
+  'system prompt 注入日期、星期与文件夹列表',
+  'prompt 内容缺失'
+);
+expect(
+  /json/i.test(systemPrompt),
+  'prompt 中出现 “json” 字样（JSON 输出模式的硬性要求）',
+  'prompt 未提及 json，模型可能不返回 JSON'
+);
+expect(
+  systemPrompt.includes('严禁编造日期') && systemPrompt.includes('sourceQuote'),
+  'prompt 包含防幻觉与溯源要求',
+  'prompt 缺少关键约束'
+);
+
+expect(
+  ai.extractJsonText('```json\n{"a":1}\n```') === '{"a":1}',
+  '能剥离 markdown 代码块',
+  ai.extractJsonText('```json\n{"a":1}\n```')
+);
+expect(
+  ai.extractJsonText('好的，结果如下：{"a":1} 以上。') === '{"a":1}',
+  '能从解释文字中裁剪出 JSON',
+  ai.extractJsonText('好的，结果如下：{"a":1} 以上。')
+);
+
+const parsedAi = ai.parseAiContent(
+  JSON.stringify({
+    tasks: [
+      {
+        title: '  完成项目方案初稿  ',
+        note: '先出初稿',
+        priority: 'urgent',
+        folderName: '工作',
+        dueDate: '2026-09-25',
+        remindAt: null,
+        sourceQuote: '小李：方案初稿下周五前给我',
+        confidence: 'high'
+      },
+      { title: '联系供应商', priority: 'medium', dueDate: '下周三', folderName: '不存在的分类', confidence: 'low' }
+    ],
+    ignored: [{ text: '聊了下季度预算', reason: '只是同步信息' }]
+  })
+);
+expect(parsedAi.tasks.length === 2, '解析出 2 条草稿', `实际 ${parsedAi.tasks.length}`);
+expect(parsedAi.tasks[0].title === '完成项目方案初稿', '标题去除首尾空白', parsedAi.tasks[0].title);
+expect(parsedAi.tasks[0].priority === 'low', '非法优先级回落为 low', parsedAi.tasks[0].priority);
+expect(parsedAi.tasks[1].dueDate === null, '非 YYYY-MM-DD 的日期被丢弃（防幻觉）', String(parsedAi.tasks[1].dueDate));
+expect(parsedAi.ignored.length === 1, '保留被跳过的段落与原因', JSON.stringify(parsedAi.ignored));
+
+const aiError = (input: string) => {
+  try {
+    ai.parseAiContent(input);
+    return '';
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+};
+expect(aiError('').includes('空内容'), '空返回给出可读提示（官方承认 JSON 模式会偶发）', aiError(''));
+expect(aiError('这不是 JSON').includes('合法 JSON'), '非 JSON 内容给出可读提示', aiError('这不是 JSON'));
+expect(
+  aiError('{"tasks":[],"ignored":[]}').includes('没有整理出'),
+  '空结果给出可读提示',
+  aiError('{"tasks":[],"ignored":[]}')
+);
+
+// 判重用例：显式构造"已有待办"，不依赖前面 UI 操作留下的状态
+const existingForDedupe = [
+  {
+    id: 9999,
+    title: '完成项目方案初稿',
+    note: '',
+    remark: '',
+    done: false,
+    priority: 'low' as const,
+    folderId: null,
+    startDate: null,
+    dueDate: '2026-09-25',
+    remindAt: null,
+    remindBefore: 0,
+    repeat: 'none' as const,
+    sortOrder: 0,
+    notifiedAt: null,
+    deletedAt: null,
+    createdAt: '',
+    completedAt: null
+  }
+];
+const dupMarked = ai.markDuplicates(parsedAi.tasks, existingForDedupe);
+expect(dupMarked[0].duplicate === true, '与已有待办重复的草稿被标记', '未标记重复');
+expect(dupMarked[1].duplicate === false, '不重复的草稿不被标记', '误标重复');
+
+// 注入假传输层，跑完整的「粘贴 → 整理 → 预览 → 导入 → 撤销」链路
+const originalTransport = ai.getAiTransport();
+ai.setAiTransport({
+  available: true,
+  async chat() {
+    return {
+      content: JSON.stringify({
+        tasks: [
+          {
+            title: '提交季度预算表',
+            note: '财务要的',
+            priority: 'high',
+            folderName: '工作',
+            dueDate: '2026-09-30',
+            sourceQuote: '老张：预算表月底前交财务',
+            confidence: 'high'
+          },
+          {
+            title: '预约牙科复诊',
+            priority: 'low',
+            folderName: '生活',
+            dueDate: null,
+            sourceQuote: '我说下周去把牙看了',
+            confidence: 'low'
+          },
+          {
+            title: '整理会议录音',
+            priority: 'medium',
+            folderName: '工作',
+            dueDate: null,
+            sourceQuote: '录音回头整理一下',
+            confidence: 'medium'
+          }
+        ],
+        ignored: []
+      }),
+      usage: { model: 'deepseek-flash', promptTokens: 1200, completionTokens: 180, cacheHitTokens: 900 }
+    };
+  }
+});
+
+await click(byText<HTMLElement>('button', 'AI 整理会议记录'));
+expect(
+  (document.body.textContent ?? '').includes('粘贴会议记录'),
+  'AI 整理对话框可以打开',
+  '对话框未打开'
+);
+
+const aiTextarea = document.querySelector(
+  'textarea[placeholder^="把会议记录粘到这里"]'
+) as HTMLTextAreaElement;
+expect(!!aiTextarea, '找到会议记录输入框', '未找到输入框');
+const textareaSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')?.set;
+await act(async () => {
+  textareaSetter?.call(aiTextarea, '老张：预算表月底前交财务。我说下周去把牙看了。');
+  aiTextarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+});
+await flush();
+
+await click(byText<HTMLElement>('.ghost-btn', '开始整理'));
+await flush();
+expect(
+  (document.body.textContent ?? '').includes('整理出 3 条待办'),
+  '进入预览并显示条数',
+  (document.body.textContent ?? '').match(/整理出 \d+ 条待办/)?.[0] ?? '未进入预览'
+);
+expect(
+  (document.body.textContent ?? '').includes('把握较低'),
+  '低置信度草稿被标注',
+  '未标注低置信度'
+);
+expect(
+  (document.body.textContent ?? '').includes('原文：老张：预算表月底前交财务'),
+  '预览显示原文出处',
+  '未显示溯源片段'
+);
+
+const tasksBeforeAi = readStore().tasks.filter((t: { deletedAt: string | null }) => !t.deletedAt).length;
+await click(byText<HTMLElement>('.ghost-btn', '导入 3 条'));
+await flush();
+const afterAi = readStore().tasks.filter((t: { deletedAt: string | null }) => !t.deletedAt);
+expect(afterAi.length === tasksBeforeAi + 3, '导入 3 条到收件箱', `新增 ${afterAi.length - tasksBeforeAi} 条`);
+const budget = afterAi.find((t: { title: string }) => t.title === '提交季度预算表');
+expect(
+  !!budget && budget.folderId === 1 && budget.priority === 'high',
+  '文件夹与优先级按草稿写入',
+  JSON.stringify(budget ?? null)
+);
+expect(
+  !(document.body.textContent ?? '').includes('粘贴会议记录'),
+  '导入后对话框关闭',
+  '对话框未关闭'
+);
+
+await click(byText<HTMLElement>('button', '撤销'));
+const afterUndo = readStore().tasks.filter(
+  (t: { title: string; deletedAt: string | null }) => t.title === '提交季度预算表' && !t.deletedAt
+);
+expect(afterUndo.length === 0, '导入可整体撤销', `仍剩 ${afterUndo.length} 条`);
+ai.setAiTransport(originalTransport);
+
+/* ---------- 17. 持久化 ---------- */
 const stored = JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
 expect(
   !!stored.tasks?.some((t: { title: string }) => t.title === '冒烟测试：写一条新待办'),
