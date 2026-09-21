@@ -35,6 +35,7 @@ import {
 } from '../lib/settings';
 import { fetchLatestRelease, isNewer, RELEASES_PAGE, type ReleaseInfo } from '../lib/updates';
 import type { TaskDraft } from '../lib/ai';
+import { isTodayTask, isUpcomingTask } from '../lib/views';
 import type { Folder, FolderColor, Priority, SortKey, Task, TaskPatch, View } from '../types';
 
 const PRIORITY_WEIGHT: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -411,8 +412,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       acc.inbox += 1;
       if (t.folderId != null) acc.folders[t.folderId] = (acc.folders[t.folderId] ?? 0) + 1;
-      if (t.dueDate && t.dueDate <= today) acc.today += 1;
-      else if (t.dueDate) acc.upcoming += 1;
+      if (isTodayTask(t, today)) acc.today += 1;
+      else if (isUpcomingTask(t, today)) acc.upcoming += 1;
     }
     return acc;
     // tick：跨天时让“今天 / 即将到来”自动翻页
@@ -428,8 +429,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (view.type === 'folder') return t.folderId === view.id;
       if (view.id === 'trash') return false;
       if (view.id === 'inbox' || view.id === 'done') return true;
-      if (view.id === 'today') return !!t.dueDate && t.dueDate <= today;
-      return !!t.dueDate && t.dueDate > today;
+      if (view.id === 'today') return isTodayTask(t, today);
+      return isUpcomingTask(t, today);
     };
     const hitKeyword = (t: Task): boolean =>
       !keyword ||

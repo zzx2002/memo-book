@@ -2,6 +2,7 @@ import { useRef, type DragEvent } from 'react';
 import { folderHex, NO_FOLDER_COLOR, PRIORITY } from '../lib/constants';
 import { fmtMD, todayISO } from '../lib/dates';
 import { REPEAT_LABELS } from '../lib/repeat';
+import { rowDateLabel } from '../lib/views';
 import { useApp } from '../state/AppContext';
 import type { Task } from '../types';
 import { Icon } from './Icon';
@@ -52,6 +53,7 @@ export function TaskRow({
   const today = todayISO();
   const cancelled = useRef(false);
   const editing = editingId === task.id;
+  const dateInfo = rowDateLabel(task);
 
   const dueClass =
     !task.done && task.dueDate
@@ -187,13 +189,20 @@ export function TaskRow({
         <span className="truncate">{folder ? folder.name : '未分类'}</span>
       </span>
 
-      <span className={`due${dueClass}`}>
+      <span
+        className={`due${dueClass}${dateInfo.kind === 'start' ? ' w-[108px] text-ink-mute' : ''}`}
+        title={dateInfo.kind === 'start' ? '排期开始日期' : undefined}
+      >
         {task.repeat !== 'none' ? (
           <span className="inline-grid place-items-center text-ink-mute" title={REPEAT_LABELS[task.repeat]}>
             <Icon name="repeat" size={12} />
           </span>
         ) : null}
-        {task.dueDate ? fmtMD(task.dueDate) : ''}
+        {dateInfo.kind === 'due'
+          ? fmtMD(dateInfo.text)
+          : dateInfo.kind === 'start'
+            ? `开始 ${fmtMD(dateInfo.text)}`
+            : ''}
       </span>
     </div>
   );

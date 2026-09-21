@@ -98,8 +98,12 @@ await flush();
 console.log(`\n[1] 初始渲染：${activeRows().length} 条未完成 + ${doneRows().length} 条已完成`);
 expect(activeRows().length === 8, '收件箱载入 8 条未完成', `应为 8 条，实际 ${activeRows().length}`);
 expect(doneRows().length === 5, '已完成分组载入 5 条', `应为 5 条，实际 ${doneRows().length}`);
-expect(navCount('今天') === '3', '“今天”计数为 3', `应为 3，实际 ${navCount('今天')}`);
-expect(navCount('即将到来') === '5', '“即将到来”计数为 5', `应为 5，实际 ${navCount('即将到来')}`);
+expect(
+  navCount('今天') === '4',
+  '“今天”计数为 4（3 条今天到期 + 1 条排期为今天）',
+  `应为 4，实际 ${navCount('今天')}`
+);
+expect(navCount('即将到来') === '4', '“即将到来”计数为 4', `应为 4，实际 ${navCount('即将到来')}`);
 
 /* ---------- 2. 搜索（v0.2） ---------- */
 const searchToggle = all<HTMLElement>('.icon-btn').find((b) => b.title.startsWith('搜索'));
@@ -166,7 +170,7 @@ expect(
 
 /* ---------- 4. 视图切换 + 新增 ---------- */
 await click(byText<HTMLElement>('.nav-item', '今天'));
-expect(activeRows().length === 3, '“今天”视图 3 条', `实际 ${activeRows().length}`);
+expect(activeRows().length === 4, '“今天”视图 4 条', `实际 ${activeRows().length}`);
 
 const addInput = document.querySelector('.add-box input') as HTMLInputElement;
 await setInput(addInput, '冒烟测试：写一条新待办');
@@ -831,7 +835,93 @@ const afterUndo = readStore().tasks.filter(
 expect(afterUndo.length === 0, '导入可整体撤销', `仍剩 ${afterUndo.length} 条`);
 ai.setAiTransport(originalTransport);
 
-/* ---------- 17. 持久化 ---------- */
+/* ---------- 17. 只设排期（无截止日期）也要计入「今天」（v0.6 修复） ---------- */
+const views = await import('../src/lib/views');
+const dayISO = (offset: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+const T0 = dayISO(0);
+const T1 = dayISO(1);
+const T_1 = dayISO(-1);
+
+expect(
+  views.isTodayTask(fakeTask(101, null, { startDate: T0 }), T0),
+  '排期为今天的任务算「今天」',
+  '只设排期的任务未计入今天'
+);
+expect(
+  views.isTodayTask(fakeTask(102, null, { startDate: T_1 }), T0),
+  '昨天就开始的任务仍算「今天」（已开始未完成）',
+  '已开始的任务消失了'
+);
+expect(
+  !views.isTodayTask(fakeTask(103, null, { startDate: T1 }), T0) &&
+    views.isUpcomingTask(fakeTask(103, null, { startDate: T1 }), T0),
+  '未来才开始的任务算「即将到来」',
+  '未来排期的任务归属错误'
+);
+expect(
+  !views.isTodayTask(fakeTask(104, null, {}), T0) && !views.isUpcomingTask(fakeTask(104, null, {}), T0),
+  '没有任何日期的任务两个视图都不算（只留在收件箱）',
+  '无日期任务被错误归类'
+);
+expect(
+  views.isTodayTask(fakeTask(105, null, { dueDate: T_1 }), T0),
+  '已逾期的任务算「今天」',
+  '逾期任务未计入今天'
+);
+expect(
+  views.isUpcomingTask(fakeTask(106, null, { dueDate: T1 }), T0),
+  '未来到期的任务算「即将到来」',
+  '未来到期归属错误'
+);
+expect(
+  !views.isTodayTask(fakeTask(107, null, { startDate: T0, done: true }), T0),
+  '已完成的任务不算「今天」',
+  '已完成任务被计入今天'
+);
+
+// 界面链路：新增一条 → 设排期为今天 → 侧栏计数 +1、行上显示「开始 …」
+await click(byText<HTMLElement>('.nav-item', '收件箱'));
+const todayCountOf = () => Number(byText<HTMLElement>('.nav-item', '今天')?.querySelector('.count')?.textContent ?? -1);
+const todayBefore = todayCountOf();
+const addInput2 = document.querySelector('.add-box input') as HTMLInputElement;
+await setInput(addInput2, '排期测试任务');
+await act(async () => {
+  addInput2.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+});
+await flush();
+
+const startInput = document.querySelector('input[type="date"][aria-label="排期"]') as HTMLInputElement;
+expect(!!startInput, '详情面板出现排期控件', '未找到排期控件');
+await setDate(startInput, T0);
+const todayAfter = todayCountOf();
+expect(
+  todayAfter === todayBefore + 1,
+  '设置排期为今天后，侧栏「今天」计数 +1',
+  `${todayBefore} → ${todayAfter}`
+);
+const startRow = activeRows().find((r) => r.textContent?.includes('排期测试任务'));
+const startRowDate = startRow?.querySelector('.due')?.textContent ?? '';
+expect(
+  startRowDate.includes('开始') && startRowDate.includes('月'),
+  '列表行显示排期开始日期（原先完全不显示）',
+  `行上显示：${startRowDate}`
+);
+
+// 切到「今天」视图应当能看到它
+await click(byText<HTMLElement>('.nav-item', '今天'));
+expect(
+  titles(activeRows()).includes('排期测试任务'),
+  '「今天」视图里能看到这条只设了排期的任务',
+  `列表：${JSON.stringify(titles(activeRows()).slice(0, 4))}`
+);
+await click(byText<HTMLElement>('.nav-item', '收件箱'));
+
+/* ---------- 18. 持久化 ---------- */
 const stored = JSON.parse(dom.window.localStorage.getItem('memo-book-v1') ?? '{}');
 expect(
   !!stored.tasks?.some((t: { title: string }) => t.title === '冒烟测试：写一条新待办'),

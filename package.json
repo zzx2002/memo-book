@@ -1,7 +1,7 @@
 {
   "name": "memo-book",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "description": "轻量化桌面待办记事簿 · Tauri 2 + React + TypeScript + SQLite + Tailwind",
   "scripts": {
@@ -13,6 +13,7 @@
     "check:config": "node --no-warnings scripts/check-config.mjs",
     "check:ui": "vite build --ssr scripts/smoke-ui.tsx --outDir .smoke --emptyOutDir --logLevel warn && node --no-warnings .smoke/smoke-ui.js",
     "check": "pnpm typecheck && pnpm check:config && pnpm check:sql && pnpm check:ui",
+    "inspect:db": "node --no-warnings scripts/inspect-db.mjs",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",

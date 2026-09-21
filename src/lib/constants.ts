@@ -28,8 +28,8 @@ export const folderHex = (color?: FolderColor | null): string =>
 
 export const SMART_VIEWS: Record<SmartViewId, { label: string; sub: string }> = {
   inbox: { label: '收件箱', sub: '记录一切，整理成行动' },
-  today: { label: '今天', sub: '今天要完成的事' },
-  upcoming: { label: '即将到来', sub: '已经排好期的待办' },
+  today: { label: '今天', sub: '已开始、今天到期或已逾期的事' },
+  upcoming: { label: '即将到来', sub: '排期或截止日期还在未来' },
   done: { label: '已完成', sub: '已经收尾的记录' },
   trash: { label: '回收站', sub: '删除的待办会先放这里，可随时恢复' }
 };
